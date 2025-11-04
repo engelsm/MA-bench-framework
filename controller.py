@@ -9,7 +9,6 @@ This script serves as the main entry point of the amd-secure-bench framework.
 
 Usage:
     ...
-
 """
 
 def run_benchmark(cmd, args=[]):
@@ -19,7 +18,7 @@ def compile_benchmark(source_file, output_file, flags=[]):
 	"""Depending on the input compiles the uncompiled benchmark source file into an executable."""
      
 def save_results(results):
-	"""Saves the benchmark results to a file."""
+	"""Saves the benchmark results to a file. Maybe support automated analysis later in a separate function."""
 
 if __name__ == "__main__":
    """Call run_benchmark with supplied flags/configs and handle results saving."""
