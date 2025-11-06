@@ -12,24 +12,36 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
+import sys
+import time
 
 def run_benchmark(exec_path):
     """Runs benchmark subprocess with given parameters and collects results."""
-    print(f"Executing: {exec_path}")
-    result = subprocess.run([exec_path], capture_output=True, text=True)
-    print(f"Execution finished. Return code: {result.returncode}")
-    if result.stdout:
-        print("\n---- Captured STDOUT ----")
-        print(result.stdout.strip())
-        print("-------------------------\n")
-    
-    if result.stderr:
-        print("\n---- Captured STDERR ----")
-        print(result.stderr.strip())
-        print("-------------------------\n")
+
+    is_linux = sys.platform.startswith('linux')
+    # TODO: Add linux perf support
+
+    results = {
+        "executable": exec_path,
+        "returncode": -1,
+        "stdout": "",
+        "stderr": "Execution failed or timed out.",
+        "runtime_seconds": -1.0,
+    }
+
+    if not is_linux:
+        start_time = time.perf_counter()
+
+        print(f"Executing: {exec_path}")
+        result = subprocess.run([exec_path], capture_output=True, text=True)
+        results['runtime_seconds'] = time.perf_counter() - start_time
+        results['returncode'] = result.returncode
+        results['stdout'] = result.stdout.strip()
+        results['stderr'] = result.stderr.strip()
         
-    return result
+    return results
 
 def compile_benchmark(source_file, output_file, flags=[]):
 	"""Depending on the input compiles the uncompiled benchmark source file into an executable."""
@@ -44,5 +56,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    results = run_benchmark(args.exec)
-    save_results(results)
+    if not os.path.exists(args.exec):
+        print(f"ERROR: Executable not found at path: {args.exec}")
+    else:
+        results = run_benchmark(args.exec)
+        print(results)
