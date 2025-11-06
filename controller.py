@@ -19,28 +19,71 @@ import sys
 import time
 
 def run_benchmark(exec_path):
-    """Runs a Linux benchmark executable under perf stat and collects stdout, stderr, return code, and runtime."""
+    """Runs a Linux benchmark executable under perf stat and parses output."""
     print(f"[INFO] Running benchmark with perf: {exec_path}")
 
-    perf_events = ["cycles", "instructions", "branches", "branch-misses"]
+    perf_events = [
+        "cycles", "instructions", "branches", "branch-misses",
+        "cache-references", "cache-misses",
+        "dTLB-loads", "dTLB-load-misses",
+        "iTLB-loads", "iTLB-load-misses",
+        "page-faults", "context-switches", "cpu-migrations", "task-clock"
+    ]
+
     cmd = ["perf", "stat", "-x,", "-e", ",".join(perf_events), exec_path]
 
     start_time = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True)
     end_time = time.perf_counter()
 
+    perf_data = parse_perf_output(proc.stderr)
+
     results = {
         "executable": exec_path,
         "returncode": proc.returncode,
         "stdout": proc.stdout.strip(),
-        "stderr": proc.stderr.strip(),
-        "runtime_seconds_perf": round(end_time - start_time, 6),
-        "runtime_seconds_python": time.perf_counter() - start_time
+        "perf": perf_data,
+        "runtime_seconds": round(end_time - start_time, 6),
     }
 
-    print(f"[INFO] Finished running benchmark")
+    print(f"[INFO] Finished benchmark in {results['runtime_seconds']} seconds")
     return results
      
+
+def parse_perf_output(perf_stderr):
+    """
+    Parses 'perf stat -x,' CSV-style stderr output into a structured dictionary.
+
+    Args:
+        perf_stderr (str): Raw stderr string from perf.
+
+    Returns:
+        dict: { event_name: value } for all supported metrics.
+    """
+    perf_data = {}
+
+    for line in perf_stderr.strip().splitlines():
+        parts = line.split(",")
+        if len(parts) < 3:
+            continue
+
+        value, _, event = parts[:3]
+        event = event.split(":")[0]  # remove :u suffix etc.
+
+        if not value.strip() or value == "<not supported>":
+            continue
+
+        try:
+            perf_data[event] = int(value.replace(",", "").replace(".", ""))
+        except ValueError:
+            try:
+                perf_data[event] = float(value)
+            except ValueError:
+                pass
+
+    return perf_data
+
+
 def save_results(results):
 	"""Saves the benchmark results to a file. Maybe support automated analysis later in a separate function."""
 
