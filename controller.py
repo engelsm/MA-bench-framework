@@ -20,27 +20,21 @@ import time
 def run_benchmark(exec_path):
     """Runs benchmark subprocess with given parameters and collects results."""
 
-    is_linux = sys.platform.startswith('linux')
-    # TODO: Add linux perf support
+    print(f"[INFO] Running benchmark: {exec_path}")
+
+    start_time = time.perf_counter()
+    proc = subprocess.run([exec_path], capture_output=True, text=True)
+    end_time = time.perf_counter()
 
     results = {
         "executable": exec_path,
-        "returncode": -1,
-        "stdout": "",
-        "stderr": "Execution failed or timed out.",
-        "runtime_seconds": -1.0,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+        "runtime_seconds": round(end_time - start_time, 6),
     }
 
-    if not is_linux:
-        start_time = time.perf_counter()
-
-        print(f"Executing: {exec_path}")
-        result = subprocess.run([exec_path], capture_output=True, text=True)
-        results['runtime_seconds'] = time.perf_counter() - start_time
-        results['returncode'] = result.returncode
-        results['stdout'] = result.stdout.strip()
-        results['stderr'] = result.stderr.strip()
-        
+    print(f"[INFO] Finished in {results['runtime_seconds']} seconds")
     return results
 
 def compile_benchmark(source_file, output_file, flags=[]):
@@ -51,13 +45,17 @@ def save_results(results):
 
 if __name__ == "__main__":
     # Later on add config file support, for now keep it simple
+
+    if not sys.platform.startswith("linux"):
+        print("[ERROR] amd-secure-bench is intended for Linux/HPC environments only. You are running on:", sys.platform)
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench tool for benchmarking secure AMD hardware.")
     parser.add_argument("exec", help="Path to executable file.")
 
     args = parser.parse_args()
 
     if not os.path.exists(args.exec):
-        print(f"ERROR: Executable not found at path: {args.exec}")
+        print(f"[ERROR] executable not found at path: {args.exec}")
     else:
-        results = run_benchmark(args.exec)
-        print(results)
+        run_benchmark(args.exec)
