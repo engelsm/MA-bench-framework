@@ -83,6 +83,61 @@ def parse_perf_output(perf_stderr):
 
     return perf_data
 
+def detect_cpu_model():
+    with open("/proc/cpuinfo") as f:
+        for line in f:
+            if line.strip().startswith("model name"):
+                return line.strip().split(": ")[1]
+    return "Unknown CPU Model"
+
+def detect_secure_modes():
+    """
+    Detects whether AMD Secure Memory Encryption (SME) and
+    Secure Encrypted Virtualization (SEV) are active on the system.
+
+    Returns:
+        dict: {"sme": bool, "sev": bool}
+    """
+    sme_active = False
+    sev_active = False
+
+    # SME status
+    sme_path = "/sys/kernel/mm/mem_encrypt/active"
+    if os.path.exists(sme_path):
+        try:
+            with open(sme_path) as f:
+                sme_active = f.read().strip() == "1"
+        except Exception:
+            pass
+    else:
+        # Fallback: search in dmesg output
+        try:
+            dmesg_out = subprocess.run(["dmesg"], capture_output=True, text=True).stdout
+            sme_active = "SME active" in dmesg_out
+        except Exception:
+            pass
+
+    # SEV status
+    sev_path = "/sys/module/kvm_amd/parameters/sev"
+    if os.path.exists(sev_path):
+        try:
+            with open(sev_path) as f:
+                sev_active = f.read().strip() == "1"
+        except Exception:
+            pass
+    else:
+        # Fallback: detect SEV guest mode from dmesg
+        try:
+            dmesg_out = subprocess.run(["dmesg"], capture_output=True, text=True).stdout
+            sev_active = "SEV" in dmesg_out and "enabled" in dmesg_out
+        except Exception:
+            pass
+
+    print("[INFO] AMD Security Mode Detection")
+    print(f"  SME active: {'Yes' if sme_active else 'No'}")
+    print(f"  SEV active: {'Yes' if sev_active else 'No'}")
+
+    return {"sme": sme_active, "sev": sev_active}
 
 def save_results(results):
 	"""Saves the benchmark results to a file. Maybe support automated analysis later in a separate function."""
@@ -94,6 +149,11 @@ if __name__ == "__main__":
         print("[ERROR] amd-secure-bench is intended for Linux/HPC environments only. You are running on:", sys.platform)
         sys.exit(1)
 
+    cpu_model = detect_cpu_model()
+    if not cpu_model.lower().startswith("amd"):
+        print("[WARNING] amd-secure-bench is intended for AMD hardware only. Program might not work as intended. Detected CPU model:", cpu_model)
+
+    detect_secure_modes()
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench tool for benchmarking secure AMD hardware.")
     parser.add_argument("exec", help="Path to executable file.")
 
