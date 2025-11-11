@@ -254,12 +254,25 @@ def aggregate_perf_results(runs_results):
 # --------------------------------------------------------------
 
 def load_config(path):
-    """Loads YAML config file and returns (global_flags, benchmarks)."""
-    with open(path, "r") as f:
-        config = yaml.safe_load(f)
+    """Loads YAML config file and returns (compiler_flags, benchmarks)."""
+    if not os.path.exists(path):
+        print(f"[ERROR] Config file not found: {path}")
+        sys.exit(1)
+
+    try:
+        with open(path, "r") as f:
+            config = yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"[ERROR] Failed to load config file: {e}")
+        sys.exit(1)
 
     compiler_flags = config.get("compiler_flags", [])
     benchmarks = config.get("benchmarks", [])
+
+    if not benchmarks:
+        print("[ERROR] No benchmarks defined in config file.")
+        sys.exit(1)
+
     return compiler_flags, benchmarks
 
 
@@ -273,9 +286,9 @@ def print_perf_summary(agg):
         print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
               f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}")
 
-def save_results(results, sys_info, output_dir="results"):
+def save_results(data, output_dir="results"):
     """
-    Saves benchmark results and system info as a JSON file in the results directory.
+    Saves benchmark results (already structured) to a JSON file.
     Returns the full path to the saved file.
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -286,7 +299,7 @@ def save_results(results, sys_info, output_dir="results"):
 
     try:
         with open(file_path, "w") as f:
-            json.dump({"system_info": sys_info, "results": results}, f, indent=2)
+            json.dump(data, f, indent=2)
         print(f"[INFO] Results saved to {file_path}")
         return file_path
     except Exception as e:
@@ -308,8 +321,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.config:
-        # Config-mode
+    # Config-mode
         compiler_flags, benchmarks = load_config(args.config)
+        all_results = [] 
+
         for bench in benchmarks:
             src = bench["source"]
             runs = bench.get("runs", 1)
@@ -319,8 +334,26 @@ if __name__ == "__main__":
             print(f"\n[CONFIG] Running {src} ({runs} runs) with flags {flags}")
             binary_path = compile_source(src, flags)
             results = run_benchmark(binary_path, runs)
-            save_results(results, sys_info)
-            print_perf_summary(aggregate_perf_results(results["runs_results"]))
+
+            # store structured results per benchmark
+            all_results.append({
+                "source": src,
+                "runs": runs,
+                "args": b_args,
+                "compiler_flags": flags,
+                "results": results,
+                "aggregate": aggregate_perf_results(results["runs_results"]),
+            })
+
+            # print summary for each benchmark to console
+            print_perf_summary(all_results[-1]["aggregate"])
+
+        # save everything to one file
+        combined_data = {
+            "system_info": sys_info,
+            "benchmarks": all_results
+        }
+        save_results(combined_data)
     else:
         # CLI-mode
         binary_path = compile_source(args.source)
