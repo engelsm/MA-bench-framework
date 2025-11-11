@@ -40,7 +40,12 @@ int main(int argc, char *argv[]) {
 
     Entry *A = malloc(sizeof(Entry) * nnz);
     for (int i = 0; i < nnz; i++) {
-        fscanf(f, "%d %d %lf", &A[i].row, &A[i].col, &A[i].val);
+        if (fscanf(f, "%d %d %lf", &A[i].row, &A[i].col, &A[i].val) != 3) { //handle invalid lines to make compiler happy
+            fprintf(stderr, "Error: invalid or incomplete line at entry %d\n", i);
+            free(A);
+            fclose(f);
+            return 1;
+        }
         A[i].row--;  // convert to 0-based indexing
         A[i].col--;
     }
