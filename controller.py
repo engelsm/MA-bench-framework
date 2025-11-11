@@ -100,6 +100,50 @@ def detect_system_environment():
 
 
 # --------------------------------------------------------------
+# Compilation function
+# --------------------------------------------------------------
+def compile_source(source_path, output_dir="workloads/builds"):
+    """
+    Compiles a C/C++ source file only if the binary is missing or outdated.
+    Returns the path to the compiled binary.
+    """
+    if not os.path.exists(source_path):
+        print(f"[ERROR] Source file not found: {source_path}")
+        sys.exit(1)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    ext = os.path.splitext(source_path)[1]
+    output_name = os.path.splitext(os.path.basename(source_path))[0]
+    binary_path = os.path.join(output_dir, output_name)
+
+    if ext == ".c":
+        compiler = "gcc"
+    elif ext in (".cc", ".cpp", ".cxx"):
+        compiler = "g++"
+    else:
+        print(f"[ERROR] Only C/C++ source files are supported. Unsupported file type: {ext}")
+        sys.exit(1)
+
+    # skip recompilation if binary is up-to-date
+    if os.path.exists(binary_path):
+        if  os.path.getmtime(binary_path) > os.path.getmtime(source_path):
+            print(f"[INFO] Using cached binary (up to date): {binary_path}")
+            return binary_path
+
+    # otherwise compile (flags subject to change)
+    cmd = [compiler, "-O2", "-g", "-fno-omit-frame-pointer", "-o", binary_path, source_path]
+    print(f"[INFO] Compiling: {' '.join(cmd)}")
+
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"[INFO] Compilation successful: {binary_path}")
+        return binary_path
+    except Exception as e:
+        print(f"[ERROR] Compilation failed: {e}")
+        sys.exit(1)
+
+# --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
 def run_benchmark(exec_path, iter_total=1):
@@ -226,15 +270,11 @@ if __name__ == "__main__":
     detect_system_environment()
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench tool for benchmarking secure AMD hardware.")
-    parser.add_argument("exec", help="Path to executable file.")
+    parser.add_argument("source", help="Path to C/C++ source file.")
     parser.add_argument("--runs", type=int, default=1, help="Number of benchmark runs to perform.")
     parser.add_argument("--args", nargs="*", default=[], help="Arguments to pass to the executable.")
     args = parser.parse_args()
 
-    if not os.path.exists(args.exec):
-        print(f"[ERROR] Executable not found at path: {args.exec}")
-        sys.exit(1)
-
-    results = run_benchmark(args.exec, args.runs)
-
+    binary_path = compile_source(args.source)
+    results = run_benchmark(binary_path, args.runs)
     print_perf_summary(aggregate_perf_results(results["runs_results"]))
