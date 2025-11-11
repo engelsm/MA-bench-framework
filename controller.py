@@ -124,7 +124,7 @@ def compile_source(source_path, output_dir="workloads/builds"):
     elif ext in (".cc", ".cpp", ".cxx"):
         compiler = "g++"
     else:
-        print(f"[ERROR] Only C/C++ source files are supported. Unsupported file type: {ext}")
+        print(f"[ERROR] Only C/C++ source files are supported. Invalid source path: {source_path}")
         sys.exit(1)
 
     # skip recompilation if binary is up-to-date

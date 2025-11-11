@@ -8,6 +8,9 @@ typedef struct {
 } Entry;
 
 int main(int argc, char *argv[]) {
+    // --------------------------------------------------------------
+    // Setup
+    // --------------------------------------------------------------
     if (argc < 2) {
         fprintf(stderr, "Usage: %s matrix.mtx\n", argv[0]);
         return 1;
@@ -19,7 +22,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Skip comments
+    // skip comments
     char line[256];
     do {
         if (!fgets(line, sizeof(line), f)) {
@@ -28,6 +31,7 @@ int main(int argc, char *argv[]) {
         }
     } while (line[0] == '%');
 
+    //.mtx files should contain header with matrix dimensions
     int nrows, ncols, nnz;
     if (sscanf(line, "%d %d %d", &nrows, &ncols, &nnz) != 3) {
         fprintf(stderr, "Invalid header\n");
@@ -42,12 +46,20 @@ int main(int argc, char *argv[]) {
     }
     fclose(f);
 
+    //vector y for multiplication
     double *y = calloc(nrows, sizeof(double));
+
+    // --------------------------------------------------------------
+    // Sparse matrix-vector multiplication
+    // --------------------------------------------------------------
 
     // Multiply by vector of 1's: y = A * 1
     for (int i = 0; i < nnz; i++) {
         y[A[i].row] += A[i].val;
     }
+    // --------------------------------------------------------------
+    // Result verification and cleanup
+    // --------------------------------------------------------------
 
     // Print checksum (sum of results)
     double checksum = 0.0;
