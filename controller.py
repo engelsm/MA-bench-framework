@@ -19,6 +19,8 @@ import subprocess
 import sys
 import time
 
+import yaml
+
 # --------------------------------------------------------------
 # System information
 # --------------------------------------------------------------
@@ -104,11 +106,8 @@ def detect_system_environment():
 # --------------------------------------------------------------
 # Compilation function
 # --------------------------------------------------------------
-def compile_source(source_path, output_dir="workloads/builds"):
-    """
-    Compiles a C/C++ source file only if the binary is missing or outdated.
-    Returns the path to the compiled binary.
-    """
+def compile_source(source_path, compiler_flags=None, output_dir="workloads/builds"):
+    """Compiles a C/C++ source file with optional compiler flags."""
     if not os.path.exists(source_path):
         print(f"[ERROR] Source file not found: {source_path}")
         sys.exit(1)
@@ -129,12 +128,11 @@ def compile_source(source_path, output_dir="workloads/builds"):
 
     # skip recompilation if binary is up-to-date
     if os.path.exists(binary_path):
-        if  os.path.getmtime(binary_path) > os.path.getmtime(source_path):
+        if os.path.getmtime(binary_path) > os.path.getmtime(source_path):
             print(f"[INFO] Using cached binary (up to date): {binary_path}")
             return binary_path
 
-    # otherwise compile (flags subject to change)
-    cmd = [compiler, "-O2", "-g", "-fno-omit-frame-pointer", "-o", binary_path, source_path]
+    cmd = [compiler] + compiler_flags + ["-o", binary_path, source_path]
     print(f"[INFO] Compiling: {' '.join(cmd)}")
 
     try:
@@ -144,6 +142,7 @@ def compile_source(source_path, output_dir="workloads/builds"):
     except Exception as e:
         print(f"[ERROR] Compilation failed: {e}")
         sys.exit(1)
+
 
 # --------------------------------------------------------------
 # Benchmark runner
@@ -250,6 +249,19 @@ def aggregate_perf_results(runs_results):
 
     return agg
 
+# --------------------------------------------------------------
+# Config handling
+# --------------------------------------------------------------
+
+def load_config(path):
+    """Loads YAML config file and returns (global_flags, benchmarks)."""
+    with open(path, "r") as f:
+        config = yaml.safe_load(f)
+
+    compiler_flags = config.get("compiler_flags", [])
+    benchmarks = config.get("benchmarks", [])
+    return compiler_flags, benchmarks
+
 
 # --------------------------------------------------------------
 # Printing & saving
@@ -288,13 +300,30 @@ def save_results(results, sys_info, output_dir="results"):
 if __name__ == "__main__":
     sys_info = detect_system_environment()
 
-    parser = argparse.ArgumentParser(description="Run the amd-secure-bench tool for benchmarking secure AMD hardware.")
-    parser.add_argument("source", help="Path to C/C++ source file.")
-    parser.add_argument("--runs", type=int, default=1, help="Number of benchmark runs to perform.")
-    parser.add_argument("--args", nargs="*", default=[], help="Arguments to pass to the executable.")
+    parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
+    parser.add_argument("source", nargs="?", help="Path to C/C++ source file.")
+    parser.add_argument("--runs", type=int, default=1, help="Number of runs.")
+    parser.add_argument("--args", nargs="*", default=[], help="Arguments to pass to executable.")
+    parser.add_argument("--config", help="Path to YAML configuration file.")
     args = parser.parse_args()
 
-    binary_path = compile_source(args.source)
-    results = run_benchmark(binary_path, args.runs)
-    save_results(results,sys_info)
-    print_perf_summary(aggregate_perf_results(results["runs_results"]))
+    if args.config:
+        # Config-mode
+        compiler_flags, benchmarks = load_config(args.config)
+        for bench in benchmarks:
+            src = bench["source"]
+            runs = bench.get("runs", 1)
+            b_args = bench.get("args", [])
+            flags = bench.get("compiler_flags", compiler_flags)
+
+            print(f"\n[CONFIG] Running {src} ({runs} runs) with flags {flags}")
+            binary_path = compile_source(src, flags)
+            results = run_benchmark(binary_path, runs)
+            save_results(results, sys_info)
+            print_perf_summary(aggregate_perf_results(results["runs_results"]))
+    else:
+        # CLI-mode
+        binary_path = compile_source(args.source)
+        results = run_benchmark(binary_path, args.runs)
+        save_results(results, sys_info)
+        print_perf_summary(aggregate_perf_results(results["runs_results"]))
