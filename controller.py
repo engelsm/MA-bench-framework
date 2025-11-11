@@ -12,6 +12,8 @@ Usage:
 """
 
 import argparse
+from datetime import datetime
+import json
 import os
 import subprocess
 import sys
@@ -259,10 +261,27 @@ def print_perf_summary(agg):
         print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
               f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}")
 
-def save_results(results):
-    """Placeholder for saving benchmark results to file."""
-    pass
+def save_results(results, output_dir="results"):
+    """
+    Saves benchmark results as a JSON file in the results directory.
+    Returns the full path to the saved file.
+    """
+    os.makedirs(output_dir, exist_ok=True)
 
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"results_{timestamp}.json"
+    file_path = os.path.join(output_dir, filename)
+
+    try:
+        with open(file_path, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"[INFO] Results saved to {file_path}")
+        return file_path
+    except Exception as e:
+        print(f"[ERROR] Failed to save results: {e}")
+        return None
+    
+    
 # --------------------------------------------------------------
 # Main entry
 # --------------------------------------------------------------
@@ -277,4 +296,5 @@ if __name__ == "__main__":
 
     binary_path = compile_source(args.source)
     results = run_benchmark(binary_path, args.runs)
+    save_results(results)
     print_perf_summary(aggregate_perf_results(results["runs_results"]))
