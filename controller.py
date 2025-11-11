@@ -261,9 +261,9 @@ def print_perf_summary(agg):
         print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
               f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}")
 
-def save_results(results, output_dir="results"):
+def save_results(results, sys_info, output_dir="results"):
     """
-    Saves benchmark results as a JSON file in the results directory.
+    Saves benchmark results and system info as a JSON file in the results directory.
     Returns the full path to the saved file.
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -274,7 +274,7 @@ def save_results(results, output_dir="results"):
 
     try:
         with open(file_path, "w") as f:
-            json.dump(results, f, indent=2)
+            json.dump({"system_info": sys_info, "results": results}, f, indent=2)
         print(f"[INFO] Results saved to {file_path}")
         return file_path
     except Exception as e:
@@ -286,7 +286,7 @@ def save_results(results, output_dir="results"):
 # Main entry
 # --------------------------------------------------------------
 if __name__ == "__main__":
-    detect_system_environment()
+    sys_info = detect_system_environment()
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench tool for benchmarking secure AMD hardware.")
     parser.add_argument("source", help="Path to C/C++ source file.")
@@ -296,5 +296,5 @@ if __name__ == "__main__":
 
     binary_path = compile_source(args.source)
     results = run_benchmark(binary_path, args.runs)
-    save_results(results)
+    save_results(results,sys_info)
     print_perf_summary(aggregate_perf_results(results["runs_results"]))
