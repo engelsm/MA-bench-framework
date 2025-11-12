@@ -1,5 +1,13 @@
 compiler_flags: ["-O2", "-g"]
 
+performance_counters: [
+        "cycles", "instructions", "branches", "branch-misses",
+        "cache-references", "cache-misses",
+        "dTLB-loads", "dTLB-load-misses",
+        "iTLB-loads", "iTLB-load-misses",
+        "page-faults", "context-switches", "cpu-migrations", "task-clock"
+]
+
 benchmarks:
   - source: workloads/sample_bench.cpp
     runs: 5

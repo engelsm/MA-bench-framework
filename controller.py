@@ -11,14 +11,13 @@ Usage:
     python3 controller.py ./workloads/a.exe --runs 5
 """
 
-import argparse
 from datetime import datetime
+import argparse
 import json
 import os
 import subprocess
 import sys
 import time
-
 import yaml
 
 # --------------------------------------------------------------
@@ -147,14 +146,14 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(exec_path, iter_total=1):
+def run_benchmark(exec_path, iter_total=1, perf_counters=None):
     """
     Coordinates benchmark execution and aggregation.
     """
     print(f"[INFO] Starting benchmark run: {exec_path}")
 
     runtime_start = time.perf_counter()
-    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total) for i in range(iter_total)]
+    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total, perf_counters) for i in range(iter_total)]
     runtime_end = time.perf_counter()
 
     runtime_total = runtime_end - runtime_start
@@ -169,19 +168,14 @@ def run_benchmark(exec_path, iter_total=1):
         "runtime_avg": runtime_avg,
     }
 
-def run_single_benchmark(exec_path, iter_current, iter_total):
+def run_single_benchmark(exec_path, iter_current, iter_total, perf_counters=None):
     """
     Executes one iteration of a benchmark under `perf stat` and parses results.
     """
-    perf_events = [
-        "cycles", "instructions", "branches", "branch-misses",
-        "cache-references", "cache-misses",
-        "dTLB-loads", "dTLB-load-misses",
-        "iTLB-loads", "iTLB-load-misses",
-        "page-faults", "context-switches", "cpu-migrations", "task-clock"
-    ]
-
-    cmd = ["perf", "stat", "-x,", "-e", ",".join(perf_events), exec_path]
+    cmd = ["perf", "stat", "-x,"] # -x for CSV output to parse more easily
+    if perf_counters:  # only if user provided custom counters
+        cmd += ["-e", ",".join(perf_counters)] # -e to specify perf counters
+    cmd.append(exec_path)
 
     print(f"[INFO] Running iteration {iter_current}/{iter_total}")
     runtime_start = time.perf_counter()
@@ -254,7 +248,7 @@ def aggregate_perf_results(runs_results):
 # --------------------------------------------------------------
 
 def load_config(path):
-    """Loads YAML config file and returns (compiler_flags, benchmarks)."""
+    """Loads YAML config file and returns (compiler_flags, benchmarks, performance_counters)."""
     if not os.path.exists(path):
         print(f"[ERROR] Config file not found: {path}")
         sys.exit(1)
@@ -266,14 +260,17 @@ def load_config(path):
         print(f"[ERROR] Failed to load config file: {e}")
         sys.exit(1)
 
-    compiler_flags = config.get("compiler_flags", [])
-    benchmarks = config.get("benchmarks", [])
+    compiler_flags = config.get("compiler_flags")
+    perf_counters = config.get("performance_counters") 
+    benchmarks = config.get("benchmarks")
 
     if not benchmarks:
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
 
-    return compiler_flags, benchmarks
+    return compiler_flags, perf_counters, benchmarks
+
+
 
 
 # --------------------------------------------------------------
@@ -322,7 +319,7 @@ if __name__ == "__main__":
 
     if args.config:
     # Config-mode
-        compiler_flags, benchmarks = load_config(args.config)
+        compiler_flags, perf_counters, benchmarks = load_config(args.config)
         all_results = [] 
 
         for bench in benchmarks:
@@ -333,7 +330,7 @@ if __name__ == "__main__":
 
             print(f"\n[CONFIG] Running {src} ({runs} runs) with flags {flags}")
             binary_path = compile_source(src, flags)
-            results = run_benchmark(binary_path, runs)
+            results = run_benchmark(binary_path, runs, perf_counters)
 
             # store structured results per benchmark
             all_results.append({
