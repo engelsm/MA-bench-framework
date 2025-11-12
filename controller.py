@@ -148,7 +148,9 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # --------------------------------------------------------------
 def run_benchmark(exec_path, iter_total=1, perf_counters=None):
     """
-    Coordinates benchmark execution and aggregation.
+    Executes a given benchmark executable one or more times and aggregates performance results.
+    Each iteration runs the binary by calling `run_single_benchmark`.
+    After all iterations complete, average and total runtimes are computed.
     """
     print(f"[INFO] Starting benchmark run: {exec_path}")
 
@@ -243,6 +245,7 @@ def aggregate_perf_results(runs_results):
 
     return agg
 
+
 # --------------------------------------------------------------
 # Config handling
 # --------------------------------------------------------------
@@ -269,8 +272,6 @@ def load_config(path):
         sys.exit(1)
 
     return compiler_flags, perf_counters, benchmarks
-
-
 
 
 # --------------------------------------------------------------
@@ -311,49 +312,39 @@ if __name__ == "__main__":
     sys_info = detect_system_environment()
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
-    parser.add_argument("source", nargs="?", help="Path to C/C++ source file.")
-    parser.add_argument("--runs", type=int, default=1, help="Number of runs.")
-    parser.add_argument("--args", nargs="*", default=[], help="Arguments to pass to executable.")
-    parser.add_argument("--config", help="Path to YAML configuration file.")
+    parser.add_argument("config", nargs="?", help="Path to YAML configuration file")
     args = parser.parse_args()
 
-    if args.config:
-    # Config-mode
-        compiler_flags, perf_counters, benchmarks = load_config(args.config)
-        all_results = [] 
+    config_path = args.config
+    if not config_path or not os.path.exists(config_path):
+        print(f"[ERROR] Config file not found: {config_path}")
+        sys.exit(1)
 
-        for bench in benchmarks:
-            src = bench["source"]
-            runs = bench.get("runs", 1)
-            b_args = bench.get("args", [])
-            flags = bench.get("compiler_flags", compiler_flags)
+    compiler_flags, perf_counters, benchmarks = load_config(config_path)
+    all_results = []
 
-            print(f"\n[CONFIG] Running {src} ({runs} runs) with flags {flags}")
-            binary_path = compile_source(src, flags)
-            results = run_benchmark(binary_path, runs, perf_counters)
+    for bench in benchmarks:
+        source = bench["source"]
+        runs = bench.get("runs", 1)
+        b_args = bench.get("args", [])
+        flags = bench.get("compiler_flags", compiler_flags)
 
-            # store structured results per benchmark
-            all_results.append({
-                "source": src,
-                "runs": runs,
-                "args": b_args,
-                "compiler_flags": flags,
-                "results": results,
-                "aggregate": aggregate_perf_results(results["runs_results"]),
-            })
+        print(f"\n[CONFIG] Running {source} ({runs} runs) with compiler flags {flags}")
+        binary_path = compile_source(source, flags)
+        results = run_benchmark(binary_path, runs, perf_counters)
 
-            # print summary for each benchmark to console
-            print_perf_summary(all_results[-1]["aggregate"])
+        all_results.append({
+            "source": source,
+            "runs": runs,
+            "args": b_args,
+            "compiler_flags": flags,
+            "results": results,
+            "aggregate": aggregate_perf_results(results["runs_results"]),
+        })
 
-        # save everything to one file
-        combined_data = {
-            "system_info": sys_info,
-            "benchmarks": all_results
-        }
-        save_results(combined_data)
-    else:
-        # CLI-mode
-        binary_path = compile_source(args.source)
-        results = run_benchmark(binary_path, args.runs)
-        save_results(results, sys_info)
-        print_perf_summary(aggregate_perf_results(results["runs_results"]))
+        print_perf_summary(all_results[-1]["aggregate"])
+
+    save_results({
+        "system_info": sys_info,
+        "benchmarks": all_results
+    })
