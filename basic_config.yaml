@@ -1,3 +1,5 @@
+numa_mode: "single_core_local"
+
 compiler_flags: ["-O2", "-g"]
 
 performance_counters: [

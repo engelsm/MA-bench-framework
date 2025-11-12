@@ -126,8 +126,7 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
         sys.exit(1)
 
     # skip recompilation if binary is up-to-date
-    if os.path.exists(binary_path):
-        if os.path.getmtime(binary_path) > os.path.getmtime(source_path):
+    if os.path.exists(binary_path) and os.path.getmtime(binary_path) > os.path.getmtime(source_path):
             print(f"[INFO] Using cached binary (up to date): {binary_path}")
             return binary_path
 
@@ -142,11 +141,43 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
         print(f"[ERROR] Compilation failed: {e}")
         sys.exit(1)
 
+# --------------------------------------------------------------
+# Command builder
+# --------------------------------------------------------------
+
+NUMA_MODES = {
+    "single_core_local": ["--physcpubind=0", "--membind=0"],
+    "multi_core_local": ["--cpunodebind=0", "--membind=0"],
+    "multi_core_remote": ["--cpunodebind=0", "--membind=1"],
+    "multi_node": ["--cpunodebind=0,1", "--membind=0,1"],
+}
+
+
+def build_exec_command(exec_path, numa_mode=None, perf_counters=None):
+    """
+    Builds the full subprocess command using numactl and perf options.
+    Args:
+        exec_path (str): Path to compiled binary
+        perf_counters (list[str]): Performance counters to pass to perf
+        numa_mode (str): One of the NUMA_MODES keys or None
+    Returns:
+        list[str]: command list ready for subprocess.run()
+    """
+    base_cmd = ["perf", "stat", "-x,"]
+    if perf_counters:
+        base_cmd += ["-e", ",".join(perf_counters)]
+    base_cmd.append(exec_path)
+
+    # apply numa mode if defined
+    numa_flags = NUMA_MODES.get(numa_mode)
+    cmd = ["numactl"] + numa_flags + base_cmd if numa_flags else base_cmd #requires numactl installed, maybe check here?
+
+    return cmd
 
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(exec_path, iter_total=1, perf_counters=None):
+def run_benchmark(exec_path, iter_total=1, numa_mode=None, perf_counters=None):
     """
     Executes a given benchmark executable one or more times and aggregates performance results.
     Each iteration runs the binary by calling `run_single_benchmark`.
@@ -155,7 +186,7 @@ def run_benchmark(exec_path, iter_total=1, perf_counters=None):
     print(f"[INFO] Starting benchmark run: {exec_path}")
 
     runtime_start = time.perf_counter()
-    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total, perf_counters) for i in range(iter_total)]
+    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total, numa_mode, perf_counters) for i in range(iter_total)]
     runtime_end = time.perf_counter()
 
     runtime_total = runtime_end - runtime_start
@@ -170,14 +201,11 @@ def run_benchmark(exec_path, iter_total=1, perf_counters=None):
         "runtime_avg": runtime_avg,
     }
 
-def run_single_benchmark(exec_path, iter_current, iter_total, perf_counters=None):
+def run_single_benchmark(exec_path, iter_current, iter_total, numa_mode, perf_counters):
     """
     Executes one iteration of a benchmark under `perf stat` and parses results.
     """
-    cmd = ["perf", "stat", "-x,"] # -x for CSV output to parse more easily
-    if perf_counters:  # only if user provided custom counters
-        cmd += ["-e", ",".join(perf_counters)] # -e to specify perf counters
-    cmd.append(exec_path)
+    cmd = build_exec_command(exec_path, numa_mode, perf_counters)
 
     print(f"[INFO] Running iteration {iter_current}/{iter_total}")
     runtime_start = time.perf_counter()
@@ -251,7 +279,7 @@ def aggregate_perf_results(runs_results):
 # --------------------------------------------------------------
 
 def load_config(path):
-    """Loads YAML config file and returns (compiler_flags, benchmarks, performance_counters)."""
+    """Loads YAML config file and returns (numa_mode, compiler_flags, benchmarks, performance_counters)."""
     if not os.path.exists(path):
         print(f"[ERROR] Config file not found: {path}")
         sys.exit(1)
@@ -263,6 +291,7 @@ def load_config(path):
         print(f"[ERROR] Failed to load config file: {e}")
         sys.exit(1)
 
+    numa_mode = config.get("numa_mode")
     compiler_flags = config.get("compiler_flags")
     perf_counters = config.get("performance_counters") 
     benchmarks = config.get("benchmarks")
@@ -271,7 +300,7 @@ def load_config(path):
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
 
-    return compiler_flags, perf_counters, benchmarks
+    return numa_mode, compiler_flags, perf_counters, benchmarks
 
 
 # --------------------------------------------------------------
@@ -320,7 +349,7 @@ if __name__ == "__main__":
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    compiler_flags, perf_counters, benchmarks = load_config(config_path)
+    numa_mode, compiler_flags, perf_counters, benchmarks = load_config(config_path)
     all_results = []
 
     for bench in benchmarks:
@@ -331,7 +360,7 @@ if __name__ == "__main__":
 
         print(f"\n[CONFIG] Running {source} ({runs} runs) with compiler flags {flags}")
         binary_path = compile_source(source, flags)
-        results = run_benchmark(binary_path, runs, perf_counters)
+        results = run_benchmark(binary_path, runs, numa_mode, perf_counters,)
 
         all_results.append({
             "source": source,
@@ -346,5 +375,7 @@ if __name__ == "__main__":
 
     save_results({
         "system_info": sys_info,
+        "numa_mode": numa_mode,
+        "compiler_flags": compiler_flags,
         "benchmarks": all_results
     })
