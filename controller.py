@@ -36,10 +36,16 @@ def detect_system_environment():
               f"You are running on: {sys.platform}")
         sys.exit(1)
 
+    cpu_model = detect_cpu_model()
+    amd_secure_modes = detect_amd_secure_modes()
+    numa_topology = detect_numa_topology()
+
     return {
         "platform": sys.platform,
-        "cpu_model": detect_cpu_model(),
-        "secure_modes_active": detect_amd_secure_modes(),
+        "cpu_model": cpu_model,
+        "sme_active": amd_secure_modes["sme_active"],
+        "sev_active": amd_secure_modes["sev_active"],
+        "numa_topology": numa_topology,
     }
 
 def detect_cpu_model():
@@ -67,7 +73,50 @@ def detect_amd_secure_modes():
     sme_active = read_flag("/sys/kernel/mm/mem_encrypt/active")
     sev_active = read_flag("/sys/module/kvm_amd/parameters/sev")
 
-    return sme_active, sev_active
+    return {"sme_active":sme_active, "sev_active": sev_active }
+
+def detect_numa_topology():
+    base = "/sys/devices/system/node/"
+    nodes = {}
+
+    for entry in os.listdir(base):
+        if not entry.startswith("node"):
+            continue
+        
+        node_id = entry[4:]  # extract number from "nodeX"
+        node_path = os.path.join(base, entry)
+        cpulist_path = os.path.join(node_path, "cpulist")
+        meminfo_path = os.path.join(node_path, "meminfo")
+
+        # --- CPUs ---
+        cpus = []
+        if os.path.isfile(cpulist_path):
+            try:
+                raw = open(cpulist_path).read().strip()
+                for part in raw.split(","):
+                    if "-" in part:
+                        start, end = map(int, part.split("-"))
+                        cpus.extend(range(start, end + 1))
+                    else:
+                        cpus.append(int(part))
+            except:
+                cpus = []
+
+        # --- Memory ---
+        mem_total = 0
+        if os.path.isfile(meminfo_path):
+            try:
+                with open(meminfo_path) as f:
+                    for line in f:
+                        if line.startswith("MemTotal"):
+                            mem_total = int(line.split()[1])
+                            break
+            except:
+                mem_total = 0
+
+        nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
+    return nodes
+
 
 
 # --------------------------------------------------------------
@@ -99,7 +148,7 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
             return binary_path
 
     cmd = [compiler] + compiler_flags + ["-o", binary_path, source_path]
-    print(f"[INFO] Compiling: {' '.join(cmd)}")
+    print(f"[INFO] Compiling: {" ".join(cmd)}")
 
     try:
         subprocess.run(cmd, check=True)
@@ -278,8 +327,8 @@ def print_perf_summary(agg):
     """Prints aggregated perf results (avg, min, max) in a clean format."""
     print("\n[PERF SUMMARY]")
     for event, stats in agg.items():
-        print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
-              f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}")
+        print(f"{event:20s}: avg={stats["avg"]:<10.2f} "  #formatting arguments
+              f"min={stats["min"]:<10.2f} max={stats["max"]:<10.2f}")
 
 def save_results(data, output_dir="results"):
     """
@@ -309,10 +358,11 @@ if __name__ == "__main__":
     sys_info = detect_system_environment()
 
     print("[INFO] System Information")
-    print(f"  Platform: {sys_info['platform']}")
-    print(f"  CPU Model: {sys_info['cpu_model']}")
-    print(f"  SME active: {'Yes' if sys_info["secure_modes_active"][0] else 'No'}")
-    print(f"  SEV active: {'Yes' if sys_info["secure_modes_active"][1] else 'No'}")
+    print(f"  Platform: {sys_info["platform"]}")
+    print(f"  CPU Model: {sys_info["cpu_model"]}")
+    print(f"  SME active: {"Yes" if sys_info["sme_active"] else "No"}")
+    print(f"  SEV active: {"Yes" if sys_info["sev_active"] else "No"}")
+    print(f"  NUMA Topology: {sys_info["numa_topology"]}")
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
     parser.add_argument("config", nargs="?", help="Path to YAML configuration file")
