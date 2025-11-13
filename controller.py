@@ -115,7 +115,7 @@ def detect_numa_topology():
                 mem_total = 0
 
         nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
-    return nodes
+    return dict(sorted(nodes.items()))
 
 
 
