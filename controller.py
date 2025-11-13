@@ -148,7 +148,7 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
             return binary_path
 
     cmd = [compiler] + compiler_flags + ["-o", binary_path, source_path]
-    print(f"[INFO] Compiling: {" ".join(cmd)}")
+    print(f"[INFO] Compiling: {' '.join(cmd)}")
 
     try:
         subprocess.run(cmd, check=True)
@@ -358,11 +358,11 @@ if __name__ == "__main__":
     sys_info = detect_system_environment()
 
     print("[INFO] System Information")
-    print(f"  Platform: {sys_info["platform"]}")
-    print(f"  CPU Model: {sys_info["cpu_model"]}")
-    print(f"  SME active: {"Yes" if sys_info["sme_active"] else "No"}")
-    print(f"  SEV active: {"Yes" if sys_info["sev_active"] else "No"}")
-    print(f"  NUMA Topology: {sys_info["numa_topology"]}")
+    print(f"  Platform: {sys_info['platform']}")
+    print(f"  CPU Model: {sys_info['cpu_model']}")
+    print(f"  SME active: {'Yes' if sys_info['sme_active'] else 'No'}")
+    print(f"  SEV active: {'Yes' if sys_info['sev_active'] else 'No'}")
+    print(f"  NUMA Topology: {sys_info['numa_topology']}")
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
     parser.add_argument("config", nargs="?", help="Path to YAML configuration file")
