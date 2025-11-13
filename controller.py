@@ -25,27 +25,24 @@ import yaml
 # --------------------------------------------------------------
 def detect_system_environment():
     """
-    Detects the system environment for amd-secure-bench:
+    Detects the system environment:
       - Verifies Linux platform
       - Detects CPU model and vendor
       - Checks AMD SME and SEV secure memory modes
-    Returns:
-      dict: {
-        "platform": str,
-        "cpu_model": str,
-        "is_amd": bool,
-        "sme_active": bool,
-        "sev_active": bool
-      }
     """
 
-    # --- platform check ---
     if not sys.platform.startswith("linux"):
-        print(f"[ERROR] amd-secure-bench is intended for Linux/HPC environments only. "
+        print(f"[ERROR] amd-secure-bench is intended for Linux environments only. "
               f"You are running on: {sys.platform}")
         sys.exit(1)
 
-    # --- CPU model detection ---
+    return {
+        "platform": sys.platform,
+        "cpu_model": detect_cpu_model(),
+        "secure_modes_active": detect_amd_secure_modes(),
+    }
+
+def detect_cpu_model():
     cpu_model = "Unknown CPU Model"
     try:
         with open("/proc/cpuinfo") as f:
@@ -56,50 +53,21 @@ def detect_system_environment():
     except Exception:
         pass
 
-    is_amd = cpu_model.lower().startswith("amd")
+    return cpu_model
 
-    if not is_amd:
-        print(f"[WARNING] amd-secure-bench is intended for AMD hardware only. "
-              f"Program might not work as intended. Detected CPU model: {cpu_model}")
+def detect_amd_secure_modes():
+    def read_flag(path):
+        if not os.path.isfile(path):
+            return False
+        try:
+            return open(path).read().strip() == "1"
+        except:
+            return False
 
-    # --- secure mode detection ---
-    sme_active = False
-    sev_active = False
+    sme_active = read_flag("/sys/kernel/mm/mem_encrypt/active")
+    sev_active = read_flag("/sys/module/kvm_amd/parameters/sev")
 
-    sme_path = "/sys/kernel/mm/mem_encrypt/active"
-    sev_path = "/sys/module/kvm_amd/parameters/sev"
-
-    try:
-        if os.path.exists(sme_path):
-            with open(sme_path) as f:
-                sme_active = f.read().strip() == "1"
-        else:
-            dmesg_out = subprocess.run(["dmesg"], capture_output=True, text=True).stdout
-            sme_active = "SME active" in dmesg_out
-    except Exception:
-        pass
-
-    try:
-        if os.path.exists(sev_path):
-            with open(sev_path) as f:
-                sev_active = f.read().strip() == "1"
-        else:
-            dmesg_out = subprocess.run(["dmesg"], capture_output=True, text=True).stdout
-            sev_active = "SEV" in dmesg_out and "enabled" in dmesg_out
-    except Exception:
-        pass
-
-    print("[INFO] AMD Security Mode Detection")
-    print(f"  SME active: {'Yes' if sme_active else 'No'}")
-    print(f"  SEV active: {'Yes' if sev_active else 'No'}")
-
-    return {
-        "platform": sys.platform,
-        "cpu_model": cpu_model,
-        "is_amd": is_amd,
-        "sme_active": sme_active,
-        "sev_active": sev_active,
-    }
+    return sme_active, sev_active
 
 
 # --------------------------------------------------------------
@@ -145,13 +113,13 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # Command builder
 # --------------------------------------------------------------
 
+#check numactl --hardware for available nodes and memory
 NUMA_MODES = {
     "single_core_local": ["--physcpubind=0", "--membind=0"],
     "multi_core_local": ["--cpunodebind=0", "--membind=0"],
     "multi_core_remote": ["--cpunodebind=0", "--membind=1"],
     "multi_node": ["--cpunodebind=0,1", "--membind=0,1"],
 }
-
 
 def build_exec_command(exec_path, numa_mode=None, perf_counters=None):
     """
@@ -339,6 +307,12 @@ def save_results(data, output_dir="results"):
 # --------------------------------------------------------------
 if __name__ == "__main__":
     sys_info = detect_system_environment()
+
+    print("[INFO] System Information")
+    print(f"  Platform: {sys_info['platform']}")
+    print(f"  CPU Model: {sys_info['cpu_model']}")
+    print(f"  SME active: {'Yes' if sys_info["secure_modes_active"][0] else 'No'}")
+    print(f"  SEV active: {'Yes' if sys_info["secure_modes_active"][1] else 'No'}")
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
     parser.add_argument("config", nargs="?", help="Path to YAML configuration file")
