@@ -327,8 +327,8 @@ def print_perf_summary(agg):
     """Prints aggregated perf results (avg, min, max) in a clean format."""
     print("\n[PERF SUMMARY]")
     for event, stats in agg.items():
-        print(f"{event:20s}: avg={stats["avg"]:<10.2f} "  #formatting arguments
-              f"min={stats["min"]:<10.2f} max={stats["max"]:<10.2f}")
+        print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
+              f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}")
 
 def save_results(data, output_dir="results"):
     """
