@@ -228,7 +228,7 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
     """
     cmd = build_exec_command(exec_path, resources, perf_counters)
 
-    print(f"[INFO] Running iteration {iter_current}/{iter_total}")
+    print(f"[INFO] Running iteration {iter_current}/{iter_total}: {' '.join(cmd)}")
     runtime_start = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True)
     runtime_end = time.perf_counter()
@@ -398,7 +398,7 @@ if __name__ == "__main__":
 
     save_results({
         "system_info": sys_info,
-        "numa_mode": resources,
+        "resources": resources,
         "compiler_flags": compiler_flags,
         "benchmarks": all_results
     })
