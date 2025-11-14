@@ -118,7 +118,6 @@ def detect_numa_topology():
     return dict(sorted(nodes.items()))
 
 
-
 # --------------------------------------------------------------
 # Compilation function
 # --------------------------------------------------------------
@@ -162,39 +161,44 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # Command builder
 # --------------------------------------------------------------
 
-#check numactl --hardware for available nodes and memory
-NUMA_MODES = {
-    "single_core_local": ["--physcpubind=0", "--membind=0"],
-    "multi_core_local": ["--cpunodebind=0", "--membind=0"],
-    "multi_core_remote": ["--cpunodebind=0", "--membind=1"],
-    "multi_node": ["--cpunodebind=0,1", "--membind=0,1"],
-}
+def build_exec_command(exec_path, resources=None, perf_counters=None):
+    """Builds the full subprocess command using numactl and perf options."""
 
-def build_exec_command(exec_path, numa_mode=None, perf_counters=None):
-    """
-    Builds the full subprocess command using numactl and perf options.
-    Args:
-        exec_path (str): Path to compiled binary
-        perf_counters (list[str]): Performance counters to pass to perf
-        numa_mode (str): One of the NUMA_MODES keys or None
-    Returns:
-        list[str]: command list ready for subprocess.run()
-    """
     base_cmd = ["perf", "stat", "-x,"]
     if perf_counters:
         base_cmd += ["-e", ",".join(perf_counters)]
     base_cmd.append(exec_path)
 
-    # apply numa mode if defined
-    numa_flags = NUMA_MODES.get(numa_mode)
-    cmd = ["numactl"] + numa_flags + base_cmd if numa_flags else base_cmd #requires numactl installed, maybe check here?
+    if not resources:
+        return base_cmd
 
-    return cmd
+    num_cores = resources.get("num_cores")
+    policy = resources.get("numa_policy")
+
+    if num_cores is None or num_cores <= 0:
+        print(f"[ERROR] Invalid num_cores in config: {num_cores}. Must be >= 1")
+        sys.exit(1)
+
+    core_list = "0" if num_cores == 1 else f"0-{num_cores-1}"
+    cpu_flag = f"--physcpubind={core_list}"
+
+    NUMA_FLAGS = {
+        "local": "--localalloc",
+        "interleave": "--interleave=all",
+    }
+
+    if policy not in NUMA_FLAGS:
+        print(f"[ERROR] Invalid numa_policy in config: {policy}. Must be 'local' or 'interleave'.")
+        sys.exit(1)
+
+    numa_flags = NUMA_FLAGS.get(policy)
+
+    return ["numactl", cpu_flag, numa_flags, *base_cmd]
 
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(exec_path, iter_total=1, numa_mode=None, perf_counters=None):
+def run_benchmark(exec_path, iter_total=1, resources=None, perf_counters=None):
     """
     Executes a given benchmark executable one or more times and aggregates performance results.
     Each iteration runs the binary by calling `run_single_benchmark`.
@@ -203,7 +207,7 @@ def run_benchmark(exec_path, iter_total=1, numa_mode=None, perf_counters=None):
     print(f"[INFO] Starting benchmark run: {exec_path}")
 
     runtime_start = time.perf_counter()
-    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total, numa_mode, perf_counters) for i in range(iter_total)]
+    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total, resources, perf_counters) for i in range(iter_total)]
     runtime_end = time.perf_counter()
 
     runtime_total = runtime_end - runtime_start
@@ -218,11 +222,11 @@ def run_benchmark(exec_path, iter_total=1, numa_mode=None, perf_counters=None):
         "runtime_avg": runtime_avg,
     }
 
-def run_single_benchmark(exec_path, iter_current, iter_total, numa_mode, perf_counters):
+def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_counters):
     """
     Executes one iteration of a benchmark under `perf stat` and parses results.
     """
-    cmd = build_exec_command(exec_path, numa_mode, perf_counters)
+    cmd = build_exec_command(exec_path, resources, perf_counters)
 
     print(f"[INFO] Running iteration {iter_current}/{iter_total}")
     runtime_start = time.perf_counter()
@@ -244,10 +248,6 @@ def run_single_benchmark(exec_path, iter_current, iter_total, numa_mode, perf_co
 def parse_perf_output(perf_stderr):
     """
     Parses 'perf stat -x,' CSV-style stderr output into a structured dictionary.
-    Example line:
-        893718,,cycles:u,1477536,100.00,0.525,GHz
-    Returns:
-        dict: { "cycles": 893718.0, "instructions": 542645.0, ... }
     """
     perf_data = {}
 
@@ -272,7 +272,6 @@ def parse_perf_output(perf_stderr):
 def aggregate_perf_results(runs_results):
     """
     Aggregates performance counters across multiple runs.
-    Returns average, min, and max for each event.
     """
     agg = {}
     all_events = {event for r in runs_results for event in r["perf"].keys()}
@@ -296,7 +295,7 @@ def aggregate_perf_results(runs_results):
 # --------------------------------------------------------------
 
 def load_config(path):
-    """Loads YAML config file and returns (numa_mode, compiler_flags, benchmarks, performance_counters)."""
+    """Loads YAML config file and returns parsed parameters."""
     if not os.path.exists(path):
         print(f"[ERROR] Config file not found: {path}")
         sys.exit(1)
@@ -308,7 +307,7 @@ def load_config(path):
         print(f"[ERROR] Failed to load config file: {e}")
         sys.exit(1)
 
-    numa_mode = config.get("numa_mode")
+    resources = config.get("resources")
     compiler_flags = config.get("compiler_flags")
     perf_counters = config.get("performance_counters") 
     benchmarks = config.get("benchmarks")
@@ -317,14 +316,14 @@ def load_config(path):
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
 
-    return numa_mode, compiler_flags, perf_counters, benchmarks
+    return resources, compiler_flags, perf_counters, benchmarks
 
 
 # --------------------------------------------------------------
 # Printing & saving
 # --------------------------------------------------------------
 def print_perf_summary(agg):
-    """Prints aggregated perf results (avg, min, max) in a clean format."""
+    """Prints aggregated perf results in a clean format."""
     print("\n[PERF SUMMARY]")
     for event, stats in agg.items():
         print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
@@ -373,7 +372,7 @@ if __name__ == "__main__":
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    numa_mode, compiler_flags, perf_counters, benchmarks = load_config(config_path)
+    resources, compiler_flags, perf_counters, benchmarks = load_config(config_path)
     all_results = []
 
     for bench in benchmarks:
@@ -382,9 +381,9 @@ if __name__ == "__main__":
         b_args = bench.get("args", [])
         flags = bench.get("compiler_flags", compiler_flags)
 
-        print(f"\n[CONFIG] Running {source} ({runs} runs) with compiler flags {flags}")
+        print(f"\n[INFO] Running {source} ({runs} runs) with compiler flags {flags} on resources {resources}")
         binary_path = compile_source(source, flags)
-        results = run_benchmark(binary_path, runs, numa_mode, perf_counters,)
+        results = run_benchmark(binary_path, runs, resources, perf_counters)
 
         all_results.append({
             "source": source,
@@ -399,7 +398,7 @@ if __name__ == "__main__":
 
     save_results({
         "system_info": sys_info,
-        "numa_mode": numa_mode,
+        "numa_mode": resources,
         "compiler_flags": compiler_flags,
         "benchmarks": all_results
     })
