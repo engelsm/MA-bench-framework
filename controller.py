@@ -216,37 +216,23 @@ def run_benchmark(exec_path, iter_total=1, resources=None, perf_counters=None):
 
 def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_counters):
     """
-    Executes one iteration of a benchmark under perf stat and applies
-    memory limits using cgroup v2.
+    Executes one iteration of a benchmark under `perf stat` and parses results.
     """
-
     cmd = build_exec_command(exec_path, resources, perf_counters)
-    max_memory_mb = resources["max_memory_mb"]
 
     print(f"[INFO] Running iteration {iter_current}/{iter_total}: {' '.join(cmd)}")
     runtime_start = time.perf_counter()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-    cg_path = "/sys/fs/cgroup/amdsecurebench"
-    os.makedirs(cg_path, exist_ok=True)
-
-    limit_bytes = max_memory_mb * 1024 * 1024
-    with open(f"{cg_path}/memory.max", "w") as f:
-            f.write(str(limit_bytes))
-
-    with open(f"{cg_path}/cgroup.procs", "w") as f:
-        f.write(str(proc.pid))
-
-    stdout, stderr = proc.communicate()
+    proc = subprocess.run(cmd, capture_output=True, text=True)
     runtime_end = time.perf_counter()
 
     return {
         "iteration": iter_current,
         "returncode": proc.returncode,
-        "stdout": stdout.strip(),
-        "perf": parse_perf_output(stderr),
+        "stdout": proc.stdout.strip(),
+        "perf": parse_perf_output(proc.stderr),
         "runtime": runtime_end - runtime_start,
     }
+
 
 # --------------------------------------------------------------
 # SLURM
