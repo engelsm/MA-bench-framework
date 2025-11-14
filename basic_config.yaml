@@ -1,6 +1,7 @@
 resources:
   num_cores: 1
   numa_policy: interleave
+  max_memory_mb: 8192
 
 compiler_flags: ["-O2", "-g"]
 

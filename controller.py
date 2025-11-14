@@ -172,28 +172,31 @@ def build_exec_command(exec_path, resources=None, perf_counters=None):
     if not resources:
         return base_cmd
 
-    num_cores = resources.get("num_cores")
-    policy = resources.get("numa_policy")
+    num_cores = resources.get("num_cores", 1)
 
-    if num_cores is None or num_cores <= 0:
+    if not isinstance(num_cores, int):
+        print(f"[ERROR] num_cores must be an integer, got: {num_cores}")
+        sys.exit(1)
+    if num_cores <= 0:
         print(f"[ERROR] Invalid num_cores in config: {num_cores}. Must be >= 1")
         sys.exit(1)
 
-    core_list = "0" if num_cores == 1 else f"0-{num_cores-1}"
+    core_list = "0" if num_cores == 1 else f"0-{num_cores - 1}"
     cpu_flag = f"--physcpubind={core_list}"
 
     NUMA_FLAGS = {
         "local": "--localalloc",
         "interleave": "--interleave=all",
     }
+    policy = resources.get("numa_policy", "interleave")
 
     if policy not in NUMA_FLAGS:
         print(f"[ERROR] Invalid numa_policy in config: {policy}. Must be 'local' or 'interleave'.")
         sys.exit(1)
 
-    numa_flags = NUMA_FLAGS.get(policy)
+    numa_flag = NUMA_FLAGS[policy]
 
-    return ["numactl", cpu_flag, numa_flags, *base_cmd]
+    return ["numactl", cpu_flag, numa_flag, *base_cmd]
 
 # --------------------------------------------------------------
 # Benchmark runner
@@ -240,6 +243,24 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
         "perf": parse_perf_output(proc.stderr),
         "runtime": runtime_end - runtime_start,
     }
+
+# --------------------------------------------------------------
+# SLURM
+# --------------------------------------------------------------
+def generate_slurm_script(config_path, resources):
+    job_script = f"""#!/bin/bash
+#SBATCH --job-name=amd-secure-bench
+#SBATCH --cpus-per-task={resources.get("num_cores", 1)}
+#SBATCH --mem={resources.get("max_memory_mb", 4096)}MB
+
+# Run the tool inside the job
+python3 controller.py {config_path}
+"""
+
+    with open("job.sh", "w") as f:
+        f.write(job_script)
+
+    print("[INFO] Generated SLURM script: job.sh")
 
 
 # --------------------------------------------------------------
@@ -364,7 +385,8 @@ if __name__ == "__main__":
     print(f"  NUMA Topology: {sys_info['numa_topology']}")
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
-    parser.add_argument("config", nargs="?", help="Path to YAML configuration file")
+    parser.add_argument("config", nargs="?", help="Path to YAML configuration file.")
+    parser.add_argument("--slurm", action="store_true", help="Wether to create a SLURM job script instead of running locally.")
     args = parser.parse_args()
 
     config_path = args.config
@@ -373,6 +395,15 @@ if __name__ == "__main__":
         sys.exit(1)
 
     resources, compiler_flags, perf_counters, benchmarks = load_config(config_path)
+
+    if args.slurm:
+        generate_slurm_script(
+            config_path=config_path,
+            resources=resources,
+        )
+        print("[INFO] SLURM job.sh created. Exiting.") #Continue executing after creating SLURM script WIP
+        sys.exit(0)
+    
     all_results = []
 
     for bench in benchmarks:
