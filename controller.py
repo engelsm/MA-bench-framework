@@ -20,6 +20,11 @@ import sys
 import time
 import yaml
 
+NUMA_FLAGS = { #todo maybe make this local
+    "local": "--localalloc",
+    "interleave": "--interleave=all",
+}
+
 # --------------------------------------------------------------
 # System information
 # --------------------------------------------------------------
@@ -172,29 +177,13 @@ def build_exec_command(exec_path, resources=None, perf_counters=None):
     if not resources:
         return base_cmd
 
-    num_cores = resources.get("num_cores", 1)
-
-    if not isinstance(num_cores, int):
-        print(f"[ERROR] num_cores must be an integer, got: {num_cores}")
-        sys.exit(1)
-    if num_cores <= 0:
-        print(f"[ERROR] Invalid num_cores in config: {num_cores}. Must be >= 1")
-        sys.exit(1)
+    num_cores = resources["num_cores"]
+    numa_policy = resources["numa_policy"]
 
     core_list = "0" if num_cores == 1 else f"0-{num_cores - 1}"
     cpu_flag = f"--physcpubind={core_list}"
 
-    NUMA_FLAGS = {
-        "local": "--localalloc",
-        "interleave": "--interleave=all",
-    }
-    policy = resources.get("numa_policy", "interleave")
-
-    if policy not in NUMA_FLAGS:
-        print(f"[ERROR] Invalid numa_policy in config: {policy}. Must be 'local' or 'interleave'.")
-        sys.exit(1)
-
-    numa_flag = NUMA_FLAGS[policy]
+    numa_flag = NUMA_FLAGS[numa_policy]
 
     return ["numactl", cpu_flag, numa_flag, *base_cmd]
 
@@ -250,8 +239,7 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
 def generate_slurm_script(config_path, resources):
     job_script = f"""#!/bin/bash
 #SBATCH --job-name=amd-secure-bench
-#SBATCH --cpus-per-task={resources.get("num_cores", 1)}
-#SBATCH --mem={resources.get("max_memory_mb", 4096)}MB
+#SBATCH --mem={resources.get("max_memory_mb")}MB
 
 # Run the tool inside the job
 python3 controller.py {config_path}
@@ -332,6 +320,27 @@ def load_config(path):
     compiler_flags = config.get("compiler_flags")
     perf_counters = config.get("performance_counters") 
     benchmarks = config.get("benchmarks")
+
+    num_cores = resources.get("num_cores", 1)
+    numa_policy = resources.get("numa_policy", "interleave")
+    max_memory_mb = resources.get("max_memory_mb", 8192)
+
+    if not isinstance(num_cores, int):
+        print(f"[ERROR] num_cores must be an integer, got: {num_cores}")
+        sys.exit(1)
+    if num_cores <= 0:
+        print(f"[ERROR] Invalid num_cores in config: {num_cores}. Must be >= 1")
+        sys.exit(1)
+
+    if numa_policy not in NUMA_FLAGS:
+        print(f"[ERROR] Invalid numa_policy in config: {numa_policy}. Must be 'local' or 'interleave'.")
+        sys.exit(1)
+
+    if not isinstance(max_memory_mb, int) or max_memory_mb <= 0:
+        print(f"[ERROR] Invalid max_memory_mb in config: {max_memory_mb}. Must be a positive integer.")
+        sys.exit(1)
+    
+    resources = { "num_cores": num_cores, "numa_policy": numa_policy, "max_memory_mb": max_memory_mb }
 
     if not benchmarks:
         print("[ERROR] No benchmarks defined in config file.")
