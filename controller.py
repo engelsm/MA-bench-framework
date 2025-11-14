@@ -180,7 +180,7 @@ def build_exec_command(exec_path, resources=None, perf_counters=None):
     num_cores = resources["num_cores"]
     numa_policy = resources["numa_policy"]
 
-    core_list = "0" if num_cores == 1 else f"0-{num_cores - 1}"
+    core_list = "+0" if num_cores == 1 else f"0-{num_cores - 1}" #todo fix core binding within slurm assigned cores
     cpu_flag = f"--physcpubind={core_list}"
 
     numa_flag = NUMA_FLAGS[numa_policy]
@@ -240,12 +240,12 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
 def generate_slurm_script(config_path, resources):
     job_script = f"""#!/bin/bash
 #SBATCH --job-name=amd-secure-bench
-#SBATCH --mem={resources.get("max_memory_mb")}MB
+#SBATCH --mem={resources["max_memory_mb"]}MB
 
 # Run the tool inside the job
 python3 controller.py {config_path}
 """
-
+    
     with open("job.sh", "w") as f:
         f.write(job_script)
 
@@ -317,11 +317,11 @@ def load_config(path):
         print(f"[ERROR] Failed to load config file: {e}")
         sys.exit(1)
 
-    resources = config.get("resources")
+    resources = config.get("resources", {})
     compiler_flags = config.get("compiler_flags")
     perf_counters = config.get("performance_counters") 
     benchmarks = config.get("benchmarks")
-
+    
     num_cores = resources.get("num_cores", 1)
     numa_policy = resources.get("numa_policy", "interleave")
     max_memory_mb = resources.get("max_memory_mb", 8192)
