@@ -3,4 +3,4 @@
 #SBATCH --mem=8192MB
 
 # Run the tool inside the job
-python3 controller.py basic_config.yaml
+srun python3 controller.py basic_config.yaml
