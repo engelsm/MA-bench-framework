@@ -122,6 +122,30 @@ def detect_numa_topology():
         nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
     return dict(sorted(nodes.items()))
 
+def get_slurm_cpu_list():
+    job_id = os.environ.get("SLURM_JOB_ID")
+    if not job_id: # todo error handling
+        return None  
+
+    cpuset_path = f"/sys/fs/cgroup/system.slice/slurmstepd.scope/job_{job_id}/step_0/cpuset.cpus.effective"
+
+    if not os.path.exists(cpuset_path):
+        return None
+
+    with open(cpuset_path, "r") as f:
+        spec = f.read().strip()
+
+    # Expand list like '0-3,8,10-12' into [0,1,2,3,8,10,11,12]
+    cpu_list = []
+    for part in spec.split(","):
+        if "-" in part:
+            start, end = map(int, part.split("-"))
+            cpu_list.extend(range(start, end + 1))
+        else:
+            cpu_list.append(int(part))
+
+    return cpu_list
+
 
 # --------------------------------------------------------------
 # Compilation function
@@ -174,16 +198,11 @@ def build_exec_command(exec_path, resources=None, perf_counters=None):
         base_cmd += ["-e", ",".join(perf_counters)]
     base_cmd.append(exec_path)
 
-    if not resources:
+    if not resources: # more error checking WIP
         return base_cmd
 
-    num_cores = resources["num_cores"]
-    numa_policy = resources["numa_policy"]
-
-    core_list = "+0" if num_cores == 1 else f"0-{num_cores - 1}" #todo fix core binding within slurm assigned cores
-    cpu_flag = f"--physcpubind={core_list}"
-
-    numa_flag = NUMA_FLAGS[numa_policy]
+    cpu_flag = f"--physcpubind={get_slurm_cpu_list()}"
+    numa_flag = NUMA_FLAGS[resources["numa_policy"]]
 
     return ["numactl", cpu_flag, numa_flag, *base_cmd]
 
