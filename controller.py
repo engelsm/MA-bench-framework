@@ -218,43 +218,31 @@ def run_benchmark(exec_path, iter_total=1, resources=None, perf_counters=None):
     Each iteration runs the binary by calling `run_single_benchmark`.
     After all iterations complete, average and total runtimes are computed.
     """
-    print(f"[INFO] Starting benchmark run: {exec_path}")
 
-    runtime_start = time.perf_counter()
-    runs_results = [run_single_benchmark(exec_path, i + 1, iter_total, resources, perf_counters) for i in range(iter_total)]
-    runtime_end = time.perf_counter()
-
-    runtime_total = runtime_end - runtime_start
-    runtime_avg = sum(r["runtime"] for r in runs_results) / iter_total
-
-    print(f"[INFO] Finished {iter_total} run(s). "
-          f"Total time: {runtime_total} s. Average per run: {runtime_avg} s")
-
-    return {
-        "runs_results": runs_results,
-        "runtime_total": runtime_total,
-        "runtime_avg": runtime_avg,
-    }
-
-def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_counters):
-    """
-    Executes one iteration of a benchmark under `perf stat` and parses results.
-    """
     cmd = build_exec_command(exec_path, resources, perf_counters)
     printable_cmd = ' '.join(cmd)
-    print(f"[INFO] Running iteration {iter_current}/{iter_total}: {printable_cmd}")
-    runtime_start = time.perf_counter()
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    runtime_end = time.perf_counter()
 
-    return {
-        "iteration": iter_current,
-        "command": printable_cmd,
-        "returncode": proc.returncode,
-        "stdout": proc.stdout.strip(),
-        "perf": parse_perf_output(proc.stderr),
-        "runtime": runtime_end - runtime_start,
-    }
+    print(f"[INFO] Starting benchmark run: {printable_cmd}")
+
+    results = []
+    for i in range(iter_total):
+        print(f"[INFO] Running iteration {i}/{iter_total}")
+        runtime_start = time.perf_counter()
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        runtime_end = time.perf_counter()
+        result = {
+            "iteration": i,
+            "command": printable_cmd,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout.strip(),
+            "perf": parse_perf_output(proc.stderr),
+            "runtime": runtime_end - runtime_start,
+        }
+        results.append(result)
+
+    print(f"[INFO] Finished {iter_total} run(s). ")
+
+    return results
 
 
 # --------------------------------------------------------------
