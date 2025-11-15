@@ -204,7 +204,7 @@ def build_exec_command(exec_path, resources=None, perf_counters=None):
     if not resources: # more error checking WIP
         return base_cmd
 
-    cpu_flag = f"--physcpubind={get_slurm_cpu_list()}"
+    cpu_flag = f"--physcpubind={','.join(map(str, get_slurm_cpu_list()))}"
     numa_flag = NUMA_FLAGS[resources["numa_policy"]]
 
     return ["numactl", cpu_flag, numa_flag, *base_cmd]
@@ -266,8 +266,8 @@ def generate_slurm_script(config_path, resources):
 #SBATCH --cpus-per-task={resources["num_cores"]}
 #SBATCH --mem={resources["max_memory_mb"]}MB
 
-# Run the tool inside the job
-python3 controller.py {config_path}
+# Run the tool inside the job and create step for proper cgroup cpu assignment
+srun python3 controller.py {config_path}
 """
     
     with open("job.sh", "w") as f:
