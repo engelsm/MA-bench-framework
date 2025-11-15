@@ -108,7 +108,7 @@ def detect_numa_topology():
                 cpus = []
 
         # --- Memory ---
-        mem_total = 0
+        mem_total = 0 #todo doesnt seem to work rn
         if os.path.isfile(meminfo_path):
             try:
                 with open(meminfo_path) as f:
@@ -125,11 +125,13 @@ def detect_numa_topology():
 def get_slurm_cpu_list():
     job_id = os.environ.get("SLURM_JOB_ID")
     if not job_id: # todo error handling
+        print("[ERROR] SLURM_JOB_ID not found in environment.")
         return None  
 
     cpuset_path = f"/sys/fs/cgroup/system.slice/slurmstepd.scope/job_{job_id}/step_0/cpuset.cpus.effective"
 
     if not os.path.exists(cpuset_path):
+        print(f"[ERROR] cpuset file not found: {cpuset_path}")
         return None
 
     with open(cpuset_path, "r") as f:
@@ -144,6 +146,7 @@ def get_slurm_cpu_list():
         else:
             cpu_list.append(int(part))
 
+    print(f"[INFO] SLURM assigned CPUs: {cpu_list}")
     return cpu_list
 
 
@@ -238,15 +241,15 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
     Executes one iteration of a benchmark under `perf stat` and parses results.
     """
     cmd = build_exec_command(exec_path, resources, perf_counters)
-
-    print(f"[INFO] Running iteration {iter_current}/{iter_total}: {' '.join(cmd)}")
+    printable_cmd = ' '.join(cmd)
+    print(f"[INFO] Running iteration {iter_current}/{iter_total}: {printable_cmd}")
     runtime_start = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True)
     runtime_end = time.perf_counter()
 
     return {
         "iteration": iter_current,
-        "command": cmd,
+        "command": printable_cmd,
         "returncode": proc.returncode,
         "stdout": proc.stdout.strip(),
         "perf": parse_perf_output(proc.stderr),
@@ -394,7 +397,7 @@ def save_results(data, output_dir="results"):
 
     try:
         with open(file_path, "w") as f:
-            json.dump(data, f, indent=2)
+            json.dump(data, f, separators=(",", ":"), indent=None)
         print(f"[INFO] Results saved to {file_path}")
         return file_path
     except Exception as e:
