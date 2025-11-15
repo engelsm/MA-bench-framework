@@ -246,6 +246,7 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
 
     return {
         "iteration": iter_current,
+        "command": cmd,
         "returncode": proc.returncode,
         "stdout": proc.stdout.strip(),
         "perf": parse_perf_output(proc.stderr),
@@ -259,6 +260,7 @@ def run_single_benchmark(exec_path, iter_current, iter_total, resources, perf_co
 def generate_slurm_script(config_path, resources):
     job_script = f"""#!/bin/bash
 #SBATCH --job-name=amd-secure-bench
+#SBATCH --cpus-per-task={resources["num_cores"]}
 #SBATCH --mem={resources["max_memory_mb"]}MB
 
 # Run the tool inside the job
