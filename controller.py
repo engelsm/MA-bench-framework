@@ -439,13 +439,15 @@ if __name__ == "__main__":
         binary_path = compile_source(source, flags)
         results = run_benchmark(binary_path, runs, resources, perf_counters)
 
+        print("DEBUG results:", results, type(results))
+
         all_results.append({
             "source": source,
             "runs": runs,
             "args": b_args,
             "compiler_flags": flags,
             "results": results,
-            "aggregate": aggregate_perf_results(results["runs_results"]),
+            "aggregate": aggregate_perf_results(results)
         })
 
         print_perf_summary(all_results[-1]["aggregate"])
