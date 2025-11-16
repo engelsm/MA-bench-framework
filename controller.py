@@ -360,7 +360,7 @@ def load_config(path):
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
 
-    benchmark_args = {}
+    benchmark_args = []
     for b in benchmarks:
         if not "source" in b:
             print("[ERROR] Each benchmark entry must have a 'source' field.")
@@ -371,7 +371,7 @@ def load_config(path):
         if "runs" in b and (not isinstance(b["runs"], int) or b["runs"] <= 0):
             print(f"[ERROR] 'runs' field must be a positive integer in benchmark: {b['source']}")
             sys.exit(1)
-        benchmark_args.append({"source": b["source"],args: b.get("args", []), "runs": b.get("runs", 1),})
+        benchmark_args.append({"source": b["source"],"args": b.get("args", []), "runs": b.get("runs", 1),})
 
     return resources, compiler_flags, perf_counters, benchmark_args
 

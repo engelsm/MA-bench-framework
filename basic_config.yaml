@@ -15,7 +15,7 @@ performance_counters: [
 
 benchmarks:
   - source: workloads/sample_bench.cpp
-    runs: 5
-  - source: workloads/sparse_minimal.c
-    args: ["matrices/1138_bus.mtx"]
     runs: 3
+  - source: workloads/sparse_minimal.c
+    args: ["matrices/bcsstk13.mtx"]
+    runs: 5

@@ -3,7 +3,6 @@ resources:
   numa_policy: interleave
   max_memory_mb: 8192
 
-compiler_flags: ["-O2", "-g","-fopenmp"]
 
 performance_counters: [
         "cycles", "instructions", "branches", "branch-misses",
@@ -14,6 +13,11 @@ performance_counters: [
 ]
 
 benchmarks:
+  - source: workloads/sparse_csr_single_thread.c
+    args: ["workloads/matrices/bcsstk13.mtx"]
+    runs: 5
+    compiler_flags: ["-O2", "-g"]
   - source: workloads/sparse_csr.c
     args: ["workloads/matrices/bcsstk13.mtx"]
     runs: 5
+    compiler_flags: ["-fopenmp", "-O2", "-g"]
