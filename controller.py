@@ -219,7 +219,7 @@ def run_benchmark(args, exec_path, iter_total=1, resources=None, perf_counters=N
     After all iterations complete, average and total runtimes are computed.
     """
 
-    cmd = build_exec_command(exec_path, resources, perf_counters, args[0]) #proper args handling
+    cmd = build_exec_command(exec_path, resources, perf_counters, *args) 
     printable_cmd = ' '.join(cmd)
 
     print(f"[INFO] Starting benchmark run: {printable_cmd}")
@@ -331,9 +331,9 @@ def load_config(path):
         sys.exit(1)
 
     resources = config.get("resources", {})
-    compiler_flags = config.get("compiler_flags")
-    perf_counters = config.get("performance_counters") 
-    benchmarks = config.get("benchmarks")
+    compiler_flags = config.get("compiler_flags", [])
+    perf_counters = config.get("performance_counters", []) 
+    benchmarks = config["benchmarks"]
     
     num_cores = resources.get("num_cores", 1)
     numa_policy = resources.get("numa_policy", "interleave")
@@ -360,7 +360,20 @@ def load_config(path):
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
 
-    return resources, compiler_flags, perf_counters, benchmarks
+    benchmark_args = {}
+    for b in benchmarks:
+        if not "source" in b:
+            print("[ERROR] Each benchmark entry must have a 'source' field.")
+            sys.exit(1)
+        if "args" in b and not isinstance(b["args"], list):
+            print(f"[ERROR] 'args' field must be a list in benchmark: {b['source']}")
+            sys.exit(1)
+        if "runs" in b and (not isinstance(b["runs"], int) or b["runs"] <= 0):
+            print(f"[ERROR] 'runs' field must be a positive integer in benchmark: {b['source']}")
+            sys.exit(1)
+        benchmark_args.append({"source": b["source"],args: b.get("args", []), "runs": b.get("runs", 1),})
+
+    return resources, compiler_flags, perf_counters, benchmark_args
 
 
 # --------------------------------------------------------------
@@ -410,33 +423,30 @@ if __name__ == "__main__":
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    resources, compiler_flags, perf_counters, benchmarks = load_config(config_path)
+    resources, compiler_flags, perf_counters, benchmark_args = load_config(config_path)
 
     if args.slurm:
-        generate_slurm_script(
-            config_path=config_path,
-            resources=resources,
-        )
-        result = subprocess.run(["sbatch", "job.sh"], capture_output=True, text=True)
+        generate_slurm_script(config_path, resources)
+        result = subprocess.run(["sbatch", "job.sh"], capture_output=True, text=True) #todo dynamic job script name
         print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
         sys.exit(0) 
+
     results_collection = []
+    for b in benchmark_args:
+        b_source = b["source"]
+        b_runs = b["runs"] 
+        b_args = b["args"]
+        b_flags = b.get("compiler_flags", compiler_flags)
 
-    for bench in benchmarks:
-        source = bench["source"]
-        runs = bench.get("runs", 1)
-        b_args = bench.get("args", [])
-        flags = bench.get("compiler_flags", compiler_flags)
-
-        print(f"\n[INFO] Running {source} ({runs} runs) with compiler flags {flags} on resources {resources}")
-        binary_path = compile_source(source, flags)
-        results = run_benchmark(b_args, binary_path, runs, resources, perf_counters)
+        print(f"\n[INFO] Running {b_source} ({b_runs} runs) with compiler flags {b_flags} on resources {resources}")
+        binary_path = compile_source(b_source, b_flags)
+        results = run_benchmark(b_args, binary_path, b_runs, resources, perf_counters)
 
         results_collection.append({
-            "source": source,
-            "runs": runs,
+            "source": b_source,
+            "runs": b_runs,
             "args": b_args,
-            "compiler_flags": flags,
+            "compiler_flags": b_flags,
             "results": results,
         })
 
