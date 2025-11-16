@@ -1,6 +1,7 @@
 workloads/builds/
 results/
 slurm-*.out
+job.sh
 
 # Ignore vim files:
 *~

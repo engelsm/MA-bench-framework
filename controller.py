@@ -146,7 +146,6 @@ def get_slurm_cpu_list():
         else:
             cpu_list.append(int(part))
 
-    print(f"[INFO] SLURM assigned CPU(s): {cpu_list}")
     return cpu_list
 
 
@@ -193,7 +192,7 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # Command builder
 # --------------------------------------------------------------
 
-def build_exec_command(exec_path, resources=None, perf_counters=None, args=None):
+def build_exec_command(exec_path, resources, perf_counters, args):
     """Builds the full subprocess command using numactl and perf options."""
 
     base_cmd = ["perf", "stat", "-x,"]
@@ -207,24 +206,29 @@ def build_exec_command(exec_path, resources=None, perf_counters=None, args=None)
     cpu_flag = f"--physcpubind={','.join(map(str, get_slurm_cpu_list()))}"
     numa_flag = NUMA_FLAGS[resources["numa_policy"]]
 
-    return ["numactl", cpu_flag, numa_flag, *base_cmd, args]
+    return ["numactl", cpu_flag, numa_flag, *base_cmd, *args]
 
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(args, exec_path, iter_total=1, resources=None, perf_counters=None):
+def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, perf_counters=None):
     """
     Executes a given benchmark executable one or more times and aggregates performance results.
     Each iteration runs the binary by calling `run_single_benchmark`.
     After all iterations complete, average and total runtimes are computed.
     """
 
-    cmd = build_exec_command(exec_path, resources, perf_counters, *args) 
+    print(args)
+    cmd = build_exec_command(exec_path, resources, perf_counters, args) 
+    print(cmd)
     printable_cmd = ' '.join(cmd)
 
     print(f"[INFO] Starting benchmark run: {printable_cmd}")
 
     results = []
+    for i in range(warmup_runs):
+        print(f"[INFO] Running warmup iteration {i+1}/{warmup_runs}")
+        subprocess.run(cmd) 
     for i in range(iter_total):
         print(f"[INFO] Running iteration {i}/{iter_total}")
         runtime_start = time.perf_counter()
@@ -371,9 +375,20 @@ def load_config(path):
         if "runs" in b and (not isinstance(b["runs"], int) or b["runs"] <= 0):
             print(f"[ERROR] 'runs' field must be a positive integer in benchmark: {b['source']}")
             sys.exit(1)
-        benchmark_args.append({"source": b["source"],"args": b.get("args", []), "runs": b.get("runs", 1),})
+        if "warmup_runs" in b and (not isinstance(b["warmup_runs"], int) or b["warmup_runs"] < 0):
+            print(f"[ERROR] 'warmup_runs' field must be a non-negative integer in benchmark: {b['source']}")
+            sys.exit(1)
+        if "compiler_flags" in b and not isinstance(b["compiler_flags"], list):
+            print(f"[ERROR] 'compiler_flags' field must be a list in benchmark: {b['source']}")
+            sys.exit(1)
+        benchmark_args.append({"source": b["source"],
+                                "args": b.get("args", []),
+                                "runs": b.get("runs", 1),
+                                "warmup_runs": b.get("warmup_runs", 0),
+                                "compiler_flags": b.get("compiler_flags", compiler_flags) #fall back to global
+                            })
 
-    return resources, compiler_flags, perf_counters, benchmark_args
+    return resources, perf_counters, benchmark_args
 
 
 # --------------------------------------------------------------
@@ -423,7 +438,7 @@ if __name__ == "__main__":
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    resources, compiler_flags, perf_counters, benchmark_args = load_config(config_path)
+    resources, perf_counters, benchmark_args = load_config(config_path)
 
     if args.slurm:
         generate_slurm_script(config_path, resources)
@@ -434,13 +449,14 @@ if __name__ == "__main__":
     results_collection = []
     for b in benchmark_args:
         b_source = b["source"]
+        b_flags = b["compiler_flags"]
         b_runs = b["runs"] 
+        b_warmup_runs = b["warmup_runs"]
         b_args = b["args"]
-        b_flags = b.get("compiler_flags", compiler_flags)
 
         print(f"\n[INFO] Running {b_source} ({b_runs} runs) with compiler flags {b_flags} on resources {resources}")
         binary_path = compile_source(b_source, b_flags)
-        results = run_benchmark(b_args, binary_path, b_runs, resources, perf_counters)
+        results = run_benchmark(binary_path, b_args, b_runs, b_warmup_runs, resources, perf_counters)
 
         results_collection.append({
             "source": b_source,
@@ -453,6 +469,5 @@ if __name__ == "__main__":
     save_results({
         "system_info": sys_info,
         "resources": resources,
-        "compiler_flags": compiler_flags,
         "benchmarks": results_collection
     })

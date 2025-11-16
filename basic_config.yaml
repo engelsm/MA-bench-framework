@@ -16,6 +16,7 @@ performance_counters: [
 benchmarks:
   - source: workloads/sample_bench.cpp
     runs: 3
+    warmup_runs: 1
   - source: workloads/sparse_minimal.c
     args: ["matrices/bcsstk13.mtx"]
     runs: 5
