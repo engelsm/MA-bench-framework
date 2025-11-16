@@ -108,18 +108,18 @@ def detect_numa_topology():
                 cpus = []
 
         # --- Memory ---
-        mem_total = 0 #todo doesnt seem to work rn
+        mem_total = 0
+
         if os.path.isfile(meminfo_path):
-            try:
-                with open(meminfo_path) as f:
-                    for line in f:
-                        if line.startswith("MemTotal"):
-                            mem_total = int(line.split()[1])
-                            break
-            except:
-                mem_total = 0
+            with open(meminfo_path) as f:
+                for line in f:
+                    if "MemTotal:" in line:
+                        parts = line.split()
+                        mem_total = int(parts[3])  # the kB value
+                        break
 
         nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
+
     return dict(sorted(nodes.items()))
 
 def get_slurm_cpu_list():
