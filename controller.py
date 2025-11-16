@@ -193,7 +193,7 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # Command builder
 # --------------------------------------------------------------
 
-def build_exec_command(exec_path, resources=None, perf_counters=None):
+def build_exec_command(exec_path, resources=None, perf_counters=None, args=None):
     """Builds the full subprocess command using numactl and perf options."""
 
     base_cmd = ["perf", "stat", "-x,"]
@@ -207,19 +207,19 @@ def build_exec_command(exec_path, resources=None, perf_counters=None):
     cpu_flag = f"--physcpubind={','.join(map(str, get_slurm_cpu_list()))}"
     numa_flag = NUMA_FLAGS[resources["numa_policy"]]
 
-    return ["numactl", cpu_flag, numa_flag, *base_cmd]
+    return ["numactl", cpu_flag, numa_flag, *base_cmd, args]
 
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(exec_path, iter_total=1, resources=None, perf_counters=None):
+def run_benchmark(args, exec_path, iter_total=1, resources=None, perf_counters=None):
     """
     Executes a given benchmark executable one or more times and aggregates performance results.
     Each iteration runs the binary by calling `run_single_benchmark`.
     After all iterations complete, average and total runtimes are computed.
     """
 
-    cmd = build_exec_command(exec_path, resources, perf_counters)
+    cmd = build_exec_command(exec_path, resources, perf_counters, args[0]) #proper args handling
     printable_cmd = ' '.join(cmd)
 
     print(f"[INFO] Starting benchmark run: {printable_cmd}")
@@ -235,6 +235,7 @@ def run_benchmark(exec_path, iter_total=1, resources=None, perf_counters=None):
             "command": printable_cmd,
             "returncode": proc.returncode,
             "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
             "perf": parse_perf_output(proc.stderr),
             "runtime": runtime_end - runtime_start,
         }
@@ -429,7 +430,7 @@ if __name__ == "__main__":
 
         print(f"\n[INFO] Running {source} ({runs} runs) with compiler flags {flags} on resources {resources}")
         binary_path = compile_source(source, flags)
-        results = run_benchmark(binary_path, runs, resources, perf_counters)
+        results = run_benchmark(b_args, binary_path, runs, resources, perf_counters)
 
         results_collection.append({
             "source": source,
