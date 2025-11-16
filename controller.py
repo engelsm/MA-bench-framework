@@ -146,7 +146,7 @@ def get_slurm_cpu_list():
         else:
             cpu_list.append(int(part))
 
-    print(f"[INFO] SLURM assigned CPUs: {cpu_list}")
+    print(f"[INFO] SLURM assigned CPU(s): {cpu_list}")
     return cpu_list
 
 
@@ -291,7 +291,7 @@ def parse_perf_output(perf_stderr):
 
     return perf_data
 
-def aggregate_perf_results(runs_results):
+def aggregate_perf_results(runs_results): #currently not used as unformatted json is saved
     """
     Aggregates performance counters across multiple runs.
     """
@@ -365,7 +365,7 @@ def load_config(path):
 # --------------------------------------------------------------
 # Printing & saving
 # --------------------------------------------------------------
-def print_perf_summary(agg):
+def print_perf_summary(agg): #Currently not used as unformatted json is saved
     """Prints aggregated perf results in a clean format."""
     print("\n[PERF SUMMARY]")
     for event, stats in agg.items():
@@ -385,8 +385,8 @@ def save_results(data, output_dir="results"):
 
     try:
         with open(file_path, "w") as f:
-            json.dump(data, f, separators=(",", ":"), indent=None)
-        print(f"[INFO] Results saved to {file_path}")
+            json.dump(data, f, indent=2)
+        print(f"\n[INFO] Results saved to {file_path}")
         return file_path
     except Exception as e:
         print(f"[ERROR] Failed to save results: {e}")
@@ -398,13 +398,6 @@ def save_results(data, output_dir="results"):
 # --------------------------------------------------------------
 if __name__ == "__main__":
     sys_info = detect_system_environment()
-
-    print("[INFO] System Information")
-    print(f"  Platform: {sys_info['platform']}")
-    print(f"  CPU Model: {sys_info['cpu_model']}")
-    print(f"  SME active: {'Yes' if sys_info['sme_active'] else 'No'}")
-    print(f"  SEV active: {'Yes' if sys_info['sev_active'] else 'No'}")
-    print(f"  NUMA Topology: {sys_info['numa_topology']}")
 
     parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
     parser.add_argument("config", nargs="?", help="Path to YAML configuration file.")
@@ -423,11 +416,10 @@ if __name__ == "__main__":
             config_path=config_path,
             resources=resources,
         )
-        print("[INFO] SLURM job.sh created.")
         result = subprocess.run(["sbatch", "job.sh"], capture_output=True, text=True)
         print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
         sys.exit(0) 
-    all_results = []
+    results_collection = []
 
     for bench in benchmarks:
         source = bench["source"]
@@ -439,22 +431,17 @@ if __name__ == "__main__":
         binary_path = compile_source(source, flags)
         results = run_benchmark(binary_path, runs, resources, perf_counters)
 
-        print("DEBUG results:", results, type(results))
-
-        all_results.append({
+        results_collection.append({
             "source": source,
             "runs": runs,
             "args": b_args,
             "compiler_flags": flags,
             "results": results,
-            "aggregate": aggregate_perf_results(results)
         })
-
-        print_perf_summary(all_results[-1]["aggregate"])
 
     save_results({
         "system_info": sys_info,
         "resources": resources,
         "compiler_flags": compiler_flags,
-        "benchmarks": all_results
+        "benchmarks": results_collection
     })
