@@ -423,9 +423,10 @@ if __name__ == "__main__":
             config_path=config_path,
             resources=resources,
         )
-        print("[INFO] SLURM job.sh created. Exiting.") #Continue executing after creating SLURM script WIP
-        sys.exit(0)
-    
+        print("[INFO] SLURM job.sh created.")
+        result = subprocess.run(["sbatch", "job.sh"], capture_output=True, text=True)
+        print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
+        sys.exit(0) 
     all_results = []
 
     for bench in benchmarks:

@@ -1,2 +1,8 @@
 workloads/builds/
 results/
+slurm-*.out
+
+# Ignore vim files:
+*~
+*.swp
+*.swo
