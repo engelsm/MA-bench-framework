@@ -8,6 +8,7 @@ Usage:
     python3 controller.py ./workloads/a.exe --runs 5
 """
 
+from collections import defaultdict
 from datetime import datetime
 import argparse
 import json
@@ -21,10 +22,11 @@ import html
 # Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
 # Sysfs paths may differ on other distros, kernels, or hardware setups.
 
-NUMA_FLAGS = { 
+NUMA_FLAGS = {
     "local": "--localalloc",
     "interleave": "--interleave=all",
 }
+
 
 # --------------------------------------------------------------
 # System information
@@ -38,8 +40,10 @@ def detect_system_environment():
     """
 
     if not sys.platform.startswith("linux"):
-        print(f"[ERROR] amd-secure-bench is intended for Linux environments only. "
-              f"You are running on: {sys.platform}")
+        print(
+            f"[ERROR] amd-secure-bench is intended for Linux environments only. "
+            f"You are running on: {sys.platform}"
+        )
         sys.exit(1)
 
     cpu_model = detect_cpu_model()
@@ -54,6 +58,7 @@ def detect_system_environment():
         "numa_topology": numa_topology,
     }
 
+
 def detect_cpu_model():
     cpu_model = "Unknown CPU Model"
     try:
@@ -67,6 +72,7 @@ def detect_cpu_model():
 
     return cpu_model
 
+
 def detect_amd_secure_modes():
     def read_flag(path):
         if not os.path.isfile(path):
@@ -79,7 +85,8 @@ def detect_amd_secure_modes():
     sme_active = read_flag("/sys/kernel/mm/mem_encrypt/active")
     sev_active = read_flag("/sys/module/kvm_amd/parameters/sev")
 
-    return {"sme_active":sme_active, "sev_active": sev_active }
+    return {"sme_active": sme_active, "sev_active": sev_active}
+
 
 def detect_numa_topology():
     base = "/sys/devices/system/node/"
@@ -88,7 +95,7 @@ def detect_numa_topology():
     for entry in os.listdir(base):
         if not entry.startswith("node"):
             continue
-        
+
         node_id = entry[4:]  # extract number from "nodeX"
         node_path = os.path.join(base, entry)
         cpulist_path = os.path.join(node_path, "cpulist")
@@ -116,16 +123,17 @@ def detect_numa_topology():
                 for line in f:
                     if "MemTotal:" in line:
                         parts = line.split()
-                        mem_total = int(parts[3])  
+                        mem_total = int(parts[3])
                         break
 
         nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
 
     return dict(sorted(nodes.items()))
 
+
 def get_slurm_cpu_list():
     job_id = os.environ.get("SLURM_JOB_ID")
-    if not job_id: 
+    if not job_id:
         print("[ERROR] SLURM_JOB_ID not found in environment.")
         sys.exit(1)
 
@@ -174,13 +182,17 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
     elif ext in (".cc", ".cpp", ".cxx"):
         compiler = "g++"
     else:
-        print(f"[ERROR] Only C/C++ source files are supported. Invalid source path: {source_path}")
+        print(
+            f"[ERROR] Only C/C++ source files are supported. Invalid source path: {source_path}"
+        )
         sys.exit(1)
 
     # skip recompilation if binary is up-to-date
-    if os.path.exists(binary_path) and os.path.getmtime(binary_path) > os.path.getmtime(source_path):
-            print(f"[INFO] Using cached binary (up to date): {binary_path}")
-            return binary_path
+    if os.path.exists(binary_path) and os.path.getmtime(binary_path) > os.path.getmtime(
+        source_path
+    ):
+        print(f"[INFO] Using cached binary (up to date): {binary_path}")
+        return binary_path
 
     cmd = [compiler] + compiler_flags + ["-o", binary_path, source_path]
     print(f"[INFO] Compiling: {' '.join(cmd)}")
@@ -193,10 +205,13 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
         print(f"[ERROR] Compilation failed: {e}")
         sys.exit(1)
 
+
 # --------------------------------------------------------------
 # Command builder
 # --------------------------------------------------------------
-def build_exec_command(exec_path, resources, perf_counters_custom, args, use_perf=True):
+def build_exec_command(
+    exec_path, numa_policy, perf_counters_custom, args, use_perf=True
+):
     """
     Build the full subprocess command.
     """
@@ -209,19 +224,22 @@ def build_exec_command(exec_path, resources, perf_counters_custom, args, use_per
             perf_cmd += ["-e", ",".join(perf_counters_custom)]
         base_cmd = perf_cmd + base_cmd
 
-    if resources:
+    if numa_policy:
         cpu_list = get_slurm_cpu_list()
         cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
-        numa_flag = NUMA_FLAGS[resources["numa_policy"]]
+        numa_flag = NUMA_FLAGS[numa_policy]
 
         base_cmd = ["numactl", cpu_flag, numa_flag] + base_cmd
 
     return base_cmd
 
+
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, perf_counters=None):
+def run_benchmark(
+    exec_path, args, iter_total, warmup_runs, num_cores, numa_policy, perf_counters
+):
     """
     Executes a given benchmark executable one or more times and aggregates performance results.
     Each iteration runs the binary by calling `run_single_benchmark`.
@@ -229,15 +247,17 @@ def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, 
     """
 
     print(args)
-    cmd = build_exec_command(exec_path, resources, perf_counters, args) 
-    printable_cmd = ' '.join(cmd)
+    cmd = build_exec_command(exec_path, numa_policy, perf_counters, args)
+    printable_cmd = " ".join(cmd)
 
     print(f"[INFO] Starting benchmark run: {printable_cmd}")
 
     results = []
     for i in range(warmup_runs):
-        print(f"[INFO] Running warmup iteration {i+1}/{warmup_runs}") 
-        subprocess.run(build_exec_command(exec_path,resources, None, args, use_perf=False)) 
+        print(f"[INFO] Running warmup iteration {i+1}/{warmup_runs}")
+        subprocess.run(
+            build_exec_command(exec_path, numa_policy, None, args, use_perf=False)
+        )
     for i in range(iter_total):
         print(f"[INFO] Running iteration {i}/{iter_total}")
         runtime_start = time.perf_counter()
@@ -262,20 +282,57 @@ def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, 
 # --------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------
-def dispatch_slurm_script(config_path, resources, output_dir="output"):
+def dispatch_slurm_scripts(benchmark_args, config_path, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
 
+    # 1. Gruppen nach SLURM-Ressourcen
+    groups = defaultdict(list)
+    for idx, b in enumerate(benchmark_args):
+        key = (b["num_cores"], b["max_memory_mb"])
+        groups[key].append(idx)
+
+    # 2. Pro Gruppe SBATCH-Skript erzeugen und dispatchen
+    for (cores, mem), indices in groups.items():
+        job_name = (
+            f"{b['source'].split('/')[-1]}_{b['num_cores']}c_{b['max_memory_mb']}MB"
+        )
+        job_script = build_slurm_script(
+            job_name=job_name,
+            num_cores=cores,
+            max_memory_mb=mem,
+            config_path=config_path,
+            output_dir=output_dir,
+            benchmark_indices=indices,
+        )
+
+        result = subprocess.run(
+            ["sbatch"], input=job_script, capture_output=True, text=True
+        )
+        print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
+        if result.stderr:
+            print(f"[WARNING] SLURM stderr: {result.stderr.strip()}")
+
+
+def build_slurm_script(
+    job_name, num_cores, max_memory_mb, config_path, output_dir, benchmark_indices
+):
+    """
+    Baut ein SLURM-Skript als String.
+    """
+    # Benchmark-Indizes als CSV übergeben
+    indices_str = ",".join(map(str, benchmark_indices))
+
     job_script = f"""#!/bin/bash
-#SBATCH --job-name=amd-secure-bench
-#SBATCH --cpus-per-task={resources["num_cores"]}
-#SBATCH --mem={resources["max_memory_mb"]}MB
+#SBATCH --job-name={job_name}
+#SBATCH --cpus-per-task={num_cores}
+#SBATCH --mem={max_memory_mb}MB
 #SBATCH --output={output_dir}/slurm-%j.out
 
-srun python3 controller.py {config_path}
+# Controller starten und nur die gewählten Benchmarks ausführen
+srun python3 controller.py {config_path} --benchmark-indices {indices_str}
 """
 
-    result = subprocess.run(["sbatch"], input=job_script, capture_output=True, text=True)
-    print(f"[INFO] {result.stdout.strip()}")
+    return job_script
 
 
 # --------------------------------------------------------------
@@ -304,8 +361,10 @@ def parse_perf_output(perf_stderr):
             continue
 
     return perf_data
-def aggregate_perf_results(runs_results): 
-    #It is possible that perf sometimes misses events unfortunately, for aggregation we only consider runs where the event was recorded
+
+
+def aggregate_perf_results(runs_results):
+    # It is possible that perf sometimes misses events unfortunately, for aggregation we only consider runs where the event was recorded
     agg = {}
     all_events = {event for r in runs_results for event in r["perf"].keys()}
 
@@ -323,11 +382,13 @@ def aggregate_perf_results(runs_results):
 
     return agg
 
+
 # --------------------------------------------------------------
 # Config handling
 # --------------------------------------------------------------
 
-def load_config(path):
+
+def load_config(path):  # simpler and better error handling
     """Loads YAML config file and returns parsed parameters."""
     if not os.path.exists(path):
         print(f"[ERROR] Config file not found: {path}")
@@ -340,14 +401,12 @@ def load_config(path):
         print(f"[ERROR] Failed to load config file: {e}")
         sys.exit(1)
 
-    resources = config.get("resources", {})
-    compiler_flags = config.get("compiler_flags", [])
-    perf_counters = config.get("performance_counters", []) 
-    benchmarks = config["benchmarks"]
-    
-    num_cores = resources.get("num_cores", 1)
-    numa_policy = resources.get("numa_policy", "interleave")
-    max_memory_mb = resources.get("max_memory_mb", 8192)
+    global_params = config["global"]
+    num_cores = global_params.get("num_cores", 1)
+    numa_policy = global_params.get("numa_policy", "interleave")
+    max_memory_mb = global_params.get("max_memory_mb", 8192)
+    perf_counters = global_params.get("perf_counters", [])
+    compiler_flags = global_params.get("compiler_flags", [])
 
     if not isinstance(num_cores, int):
         print(f"[ERROR] num_cores must be an integer, got: {num_cores}")
@@ -357,15 +416,26 @@ def load_config(path):
         sys.exit(1)
 
     if numa_policy not in NUMA_FLAGS:
-        print(f"[ERROR] Invalid numa_policy in config: {numa_policy}. Must be 'local' or 'interleave'.")
+        print(
+            f"[ERROR] Invalid numa_policy in config: {numa_policy}. Must be 'local' or 'interleave'."
+        )
         sys.exit(1)
 
     if not isinstance(max_memory_mb, int) or max_memory_mb <= 0:
-        print(f"[ERROR] Invalid max_memory_mb in config: {max_memory_mb}. Must be a positive integer.")
+        print(
+            f"[ERROR] Invalid max_memory_mb in config: {max_memory_mb}. Must be a positive integer."
+        )
         sys.exit(1)
-    
-    resources = { "num_cores": num_cores, "numa_policy": numa_policy, "max_memory_mb": max_memory_mb }
 
+    global_params = {
+        "num_cores": num_cores,
+        "numa_policy": numa_policy,
+        "max_memory_mb": max_memory_mb,
+        "perf_counters": perf_counters,
+        "compiler_flags": compiler_flags,
+    }
+
+    benchmarks = config["benchmarks"]
     if not benchmarks:
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
@@ -379,33 +449,51 @@ def load_config(path):
             print(f"[ERROR] 'args' field must be a list in benchmark: {b['source']}")
             sys.exit(1)
         if "runs" in b and (not isinstance(b["runs"], int) or b["runs"] <= 0):
-            print(f"[ERROR] 'runs' field must be a positive integer in benchmark: {b['source']}")
+            print(
+                f"[ERROR] 'runs' field must be a positive integer in benchmark: {b['source']}"
+            )
             sys.exit(1)
-        if "warmup_runs" in b and (not isinstance(b["warmup_runs"], int) or b["warmup_runs"] < 0):
-            print(f"[ERROR] 'warmup_runs' field must be a non-negative integer in benchmark: {b['source']}")
+        if "warmup_runs" in b and (
+            not isinstance(b["warmup_runs"], int) or b["warmup_runs"] < 0
+        ):
+            print(
+                f"[ERROR] 'warmup_runs' field must be a non-negative integer in benchmark: {b['source']}"
+            )
             sys.exit(1)
         if "compiler_flags" in b and not isinstance(b["compiler_flags"], list):
-            print(f"[ERROR] 'compiler_flags' field must be a list in benchmark: {b['source']}")
+            print(
+                f"[ERROR] 'compiler_flags' field must be a list in benchmark: {b['source']}"
+            )
             sys.exit(1)
-        benchmark_args.append({"source": b["source"],
-                                "args": b.get("args", []),
-                                "runs": b.get("runs", 1),
-                                "warmup_runs": b.get("warmup_runs", 0),
-                                "compiler_flags": b.get("compiler_flags", compiler_flags) #fall back to global
-                            })
+        benchmark_args.append(
+            {
+                "source": b["source"],
+                "args": b.get("args", []),
+                "runs": b.get("runs", 1),
+                "warmup_runs": b.get("warmup_runs", 0),
+                "num_cores": b.get("num_cores", num_cores),
+                "numa_policy": b.get("numa_policy", numa_policy),
+                "max_memory_mb": b.get("max_memory_mb", max_memory_mb),
+                "perf_counters": b.get("perf_counters", perf_counters),
+                "compiler_flags": b.get("compiler_flags", compiler_flags),
+            }
+        )
 
-    return resources, perf_counters, benchmark_args
+    return benchmark_args
 
 
 # --------------------------------------------------------------
 # Printing & saving
 # --------------------------------------------------------------
-def print_perf_summary(agg): #Currently not used as unformatted json is saved
+def print_perf_summary(agg):  # Currently not used as unformatted json is saved
     """Prints aggregated perf results in a clean format."""
     print("\n[PERF SUMMARY]")
     for event, stats in agg.items():
-        print(f"{event:20s}: avg={stats['avg']:<10.2f} "  #formatting arguments
-              f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}")
+        print(
+            f"{event:20s}: avg={stats['avg']:<10.2f} "  # formatting arguments
+            f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}"
+        )
+
 
 def save_results(data, output_dir="results"):
     """
@@ -426,7 +514,8 @@ def save_results(data, output_dir="results"):
     except Exception as e:
         print(f"[ERROR] Failed to save results: {e}")
         return None
-    
+
+
 # --------------------------------------------------------------
 # HTML Report
 # --------------------------------------------------------------
@@ -519,7 +608,9 @@ def create_html_report(results_collection, output_dir="results"):
         html_content += f"<h2>Benchmark: {html.escape(b['source'])}</h2>"
 
         html_content += "<div class='meta'>"
-        html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b['compiler_flags']))}<br>"
+        html_content += (
+            f"<b>Compiler Flags:</b> {html.escape(' '.join(b['compiler_flags']))}<br>"
+        )
         html_content += f"<b>Runs:</b> {b['runs']} &nbsp;&nbsp; "
         html_content += f"<b>Warmup:</b> {b['warmup_runs']}<br>"
         html_content += f"<b>Args:</b> {html.escape(' '.join(b['args'])) if b['args'] else 'None'}<br>"
@@ -566,7 +657,6 @@ def create_html_report(results_collection, output_dir="results"):
 
         html_content += "</table>"
 
-
         detail_id = f"details_{b_i}"
 
         html_content += f"""
@@ -605,14 +695,27 @@ def create_html_report(results_collection, output_dir="results"):
 
     print(f"[INFO] HTML report generated: {report_path}")
 
+
 # Main entry
 # --------------------------------------------------------------
 if __name__ == "__main__":
     sys_info = detect_system_environment()
 
-    parser = argparse.ArgumentParser(description="Run the amd-secure-bench benchmarking tool.")
+    parser = argparse.ArgumentParser(
+        description="Run the amd-secure-bench benchmarking tool."
+    )
     parser.add_argument("config", nargs="?", help="Path to YAML configuration file.")
-    parser.add_argument("--slurm", action="store_true", help="Wether to create a SLURM job script instead of running locally.")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Run benchmarks locally instead of submitting SLURM jobs",
+    )
+    parser.add_argument(
+        "--benchmark-indices",
+        type=str,
+        help="Comma-separated indices to run (used by SLURM jobs)",
+    )
+
     args = parser.parse_args()
 
     config_path = args.config
@@ -620,37 +723,66 @@ if __name__ == "__main__":
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    resources, perf_counters, benchmark_args = load_config(config_path)
+    benchmark_args = load_config(config_path)
 
-    if args.slurm:
-        dispatch_slurm_script(config_path, resources)
-        sys.exit(0) 
+    # -----------------------
+    # SLURM Mode
+    # -----------------------
+    if not args.local and not args.benchmark_indices:
+        dispatch_slurm_scripts(benchmark_args, config_path)
+        print("[INFO] SLURM jobs submitted. Exiting local process.")
+        sys.exit(0)
+
+    # -----------------------
+    # Local / SLURM Job Mode
+    # -----------------------
+    if args.benchmark_indices:
+        indices = list(map(int, args.benchmark_indices.split(",")))
+        benchmark_args = [benchmark_args[i] for i in indices]
 
     results_collection = []
+
     for b in benchmark_args:
+        b_num_cores = b["num_cores"]
+        b_max_memory_mb = b["max_memory_mb"]
+        b_numa_policy = b["numa_policy"]
         b_source = b["source"]
         b_flags = b["compiler_flags"]
-        b_runs = b["runs"] 
+        b_runs = b["runs"]
         b_warmup_runs = b["warmup_runs"]
         b_args = b["args"]
+        b_perf_counters = b["perf_counters"]
 
-        print(f"\n[INFO] Running {b_source} ({b_runs} runs) with compiler flags {b_flags} on resources {resources}")
+        print(
+            f"\n[INFO] Running {b_source} ({b_runs} runs) with flags {b_flags} on resources {b_num_cores} cores, {b_max_memory_mb}MB memory, NUMA policy: {b_numa_policy}"
+        )
         binary_path = compile_source(b_source, b_flags)
-        results = run_benchmark(binary_path, b_args, b_runs, b_warmup_runs, resources, perf_counters)
+        results = run_benchmark(
+            binary_path,
+            b_args,
+            b_runs,
+            b_warmup_runs,
+            b_num_cores,
+            b_numa_policy,
+            b_perf_counters,
+        )
 
-        results_collection.append({
-            "source": b_source,
-            "runs": b_runs,
-            "compiler_flags": b_flags,
-            "warmup_runs": b_warmup_runs,
-            "args": b_args,
-            "results": results,
-        })
+        results_collection.append(
+            {
+                "source": b_source,
+                "runs": b_runs,
+                "compiler_flags": b_flags,
+                "warmup_runs": b_warmup_runs,
+                "args": b_args,
+                "results": results,
+            }
+        )
 
     create_html_report(results_collection)
 
-    save_results({
-        "system_info": sys_info,
-        "resources": resources,
-        "benchmarks": results_collection
-    })
+    save_results(
+        {
+            "system_info": sys_info,
+            "benchmarks": results_collection,
+        }
+    )
