@@ -3,9 +3,6 @@ controller.py
 ----------
 
 This script serves as the main entry point of the amd-secure-bench framework.
-- Runs C/C++ benchmark executables via subprocess
-- Collects stdout, stderr, and runtime
-- Saves results to 'results/results.json'
 
 Usage:
     python3 controller.py ./workloads/a.exe --runs 5
@@ -20,7 +17,10 @@ import sys
 import time
 import yaml
 
-NUMA_FLAGS = { #todo maybe make this local
+# Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
+# Sysfs paths may differ on other distros, kernels, or hardware setups.
+
+NUMA_FLAGS = { 
     "local": "--localalloc",
     "interleave": "--interleave=all",
 }
@@ -115,7 +115,7 @@ def detect_numa_topology():
                 for line in f:
                     if "MemTotal:" in line:
                         parts = line.split()
-                        mem_total = int(parts[3])  # the kB value
+                        mem_total = int(parts[3])  
                         break
 
         nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
@@ -124,18 +124,22 @@ def detect_numa_topology():
 
 def get_slurm_cpu_list():
     job_id = os.environ.get("SLURM_JOB_ID")
-    if not job_id: # todo error handling
+    if not job_id: 
         print("[ERROR] SLURM_JOB_ID not found in environment.")
-        return None  
+        sys.exit(1)
 
     cpuset_path = f"/sys/fs/cgroup/system.slice/slurmstepd.scope/job_{job_id}/step_0/cpuset.cpus.effective"
 
     if not os.path.exists(cpuset_path):
         print(f"[ERROR] cpuset file not found: {cpuset_path}")
-        return None
+        sys.exit(1)
 
     with open(cpuset_path, "r") as f:
         spec = f.read().strip()
+
+    if not spec:
+        print(f"[ERROR] Empty cpuset specification in: {cpuset_path}")
+        sys.exit(1)
 
     # Expand list like '0-3,8,10-12' into [0,1,2,3,8,10,11,12]
     cpu_list = []
@@ -191,22 +195,27 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
 # --------------------------------------------------------------
 # Command builder
 # --------------------------------------------------------------
+def build_exec_command(exec_path, resources, perf_counters_custom, args, use_perf=True):
+    """
+    Build the full subprocess command.
+    """
 
-def build_exec_command(exec_path, resources, perf_counters, args):
-    """Builds the full subprocess command using numactl and perf options."""
+    base_cmd = [exec_path, *args]
 
-    base_cmd = ["perf", "stat", "-x,"]
-    if perf_counters:
-        base_cmd += ["-e", ",".join(perf_counters)]
-    base_cmd.append(exec_path)
+    if use_perf:
+        perf_cmd = ["perf", "stat", "-x,"]
+        if perf_counters_custom:
+            perf_cmd += ["-e", ",".join(perf_counters_custom)]
+        base_cmd = perf_cmd + base_cmd
 
-    if not resources: # more error checking WIP
-        return base_cmd
+    if resources:
+        cpu_list = get_slurm_cpu_list()
+        cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
+        numa_flag = NUMA_FLAGS[resources["numa_policy"]]
 
-    cpu_flag = f"--physcpubind={','.join(map(str, get_slurm_cpu_list()))}"
-    numa_flag = NUMA_FLAGS[resources["numa_policy"]]
+        base_cmd = ["numactl", cpu_flag, numa_flag] + base_cmd
 
-    return ["numactl", cpu_flag, numa_flag, *base_cmd, *args]
+    return base_cmd
 
 # --------------------------------------------------------------
 # Benchmark runner
@@ -220,15 +229,14 @@ def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, 
 
     print(args)
     cmd = build_exec_command(exec_path, resources, perf_counters, args) 
-    print(cmd)
     printable_cmd = ' '.join(cmd)
 
     print(f"[INFO] Starting benchmark run: {printable_cmd}")
 
     results = []
     for i in range(warmup_runs):
-        print(f"[INFO] Running warmup iteration {i+1}/{warmup_runs}")
-        subprocess.run(cmd) 
+        print(f"[INFO] Running warmup iteration {i+1}/{warmup_runs}") 
+        subprocess.run(build_exec_command(exec_path,resources, None, args, use_perf=False)) 
     for i in range(iter_total):
         print(f"[INFO] Running iteration {i}/{iter_total}")
         runtime_start = time.perf_counter()
