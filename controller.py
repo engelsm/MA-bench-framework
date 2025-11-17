@@ -262,13 +262,15 @@ def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, 
 # --------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------
-def dispatch_slurm_script(config_path, resources):
+def dispatch_slurm_script(config_path, resources, output_dir="output"):
+    os.makedirs(output_dir, exist_ok=True)
+
     job_script = f"""#!/bin/bash
 #SBATCH --job-name=amd-secure-bench
 #SBATCH --cpus-per-task={resources["num_cores"]}
 #SBATCH --mem={resources["max_memory_mb"]}MB
+#SBATCH --output={output_dir}/slurm-%j.out
 
-# Run the tool inside the job and create step for proper cgroup cpu assignment
 srun python3 controller.py {config_path}
 """
 

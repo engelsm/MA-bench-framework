@@ -1,5 +1,6 @@
 workloads/builds/
 results/
+output/
 slurm-*.out
 job.sh
 
