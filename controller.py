@@ -262,7 +262,7 @@ def run_benchmark(exec_path, args, iter_total=1, warmup_runs=0, resources=None, 
 # --------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------
-def generate_slurm_script(config_path, resources):
+def dispatch_slurm_script(config_path, resources):
     job_script = f"""#!/bin/bash
 #SBATCH --job-name=amd-secure-bench
 #SBATCH --cpus-per-task={resources["num_cores"]}
@@ -271,11 +271,9 @@ def generate_slurm_script(config_path, resources):
 # Run the tool inside the job and create step for proper cgroup cpu assignment
 srun python3 controller.py {config_path}
 """
-    
-    with open("job.sh", "w") as f:
-        f.write(job_script)
 
-    print("[INFO] Generated SLURM script: job.sh")
+    result = subprocess.run(["sbatch"], input=job_script, capture_output=True, text=True)
+    print(f"[INFO] {result.stdout.strip()}")
 
 
 # --------------------------------------------------------------
@@ -623,9 +621,7 @@ if __name__ == "__main__":
     resources, perf_counters, benchmark_args = load_config(config_path)
 
     if args.slurm:
-        generate_slurm_script(config_path, resources)
-        result = subprocess.run(["sbatch", "job.sh"], capture_output=True, text=True) #todo dynamic job script name
-        print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
+        dispatch_slurm_script(config_path, resources)
         sys.exit(0) 
 
     results_collection = []
