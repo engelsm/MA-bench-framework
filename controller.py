@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import yaml
+import html
 
 # Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
 # Sysfs paths may differ on other distros, kernels, or hardware setups.
@@ -429,7 +430,108 @@ def save_results(data, output_dir="results"):
         print(f"[ERROR] Failed to save results: {e}")
         return None
     
-    
+# --------------------------------------------------------------
+# HTML Report
+# --------------------------------------------------------------
+def create_html_report(results_collection, output_dir="results"):
+    """
+    Creates a HTML report from the benchmark results.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    report_path = os.path.join(output_dir, f"report_{timestamp}.html")
+
+    # --- HTML + CSS ---
+    html_content = """
+<html>
+<head>
+    <title>amd-secure-bench Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #fafafa;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        h2 {
+            border-left: 5px solid #007acc;
+            padding-left: 10px;
+            margin-top: 40px;
+        }
+        .meta {
+            background: #eef6ff;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 40px;
+        }
+        table th, table td {
+            border: 1px solid #ccc;
+            padding: 8px 10px;
+            font-size: 14px;
+        }
+        table th {
+            background: #007acc;
+            color: white;
+            text-align: left;
+        }
+        .perf-data {
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>amd-secure-bench Benchmark Report</h1>
+"""
+
+    for b in results_collection:
+        html_content += f"<h2>Benchmark: {html.escape(b['source'])}</h2>"
+
+        html_content += "<div class='meta'>"
+        html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b['compiler_flags']))}<br>"
+        html_content += f"<b>Runs:</b> {b['runs']} &nbsp;&nbsp;&nbsp; "
+        html_content += f"<b>Warmup:</b> {b['warmup_runs']}<br>"
+        html_content += f"<b>Args:</b> {html.escape(' '.join(b['args']))}"
+        html_content += "</div>"
+
+        html_content += """
+        <table>
+            <tr>
+                <th>Iteration</th>
+                <th>Runtime (s)</th>
+                <th>Perf Counters</th>
+            </tr>
+        """
+
+        for r in b["results"]:
+            perf_data_str = "\n".join([f"{k}: {v}" for k, v in r["perf"].items()])
+            html_content += f"""
+            <tr>
+                <td>{r['iteration']}</td>
+                <td>{r['runtime']:.4f}</td>
+                <td class="perf-data">{html.escape(perf_data_str)}</td>
+            </tr>
+            """
+
+        html_content += "</table>"
+
+    html_content += "</body></html>"
+
+    try:
+        with open(report_path, "w") as f:
+            f.write(html_content)
+        print(f"[INFO] HTML report generated: {report_path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to generate HTML report: {e}")
+   
 # --------------------------------------------------------------
 # Main entry
 # --------------------------------------------------------------
@@ -469,10 +571,13 @@ if __name__ == "__main__":
         results_collection.append({
             "source": b_source,
             "runs": b_runs,
-            "args": b_args,
             "compiler_flags": b_flags,
+            "warmup_runs": b_warmup_runs,
+            "args": b_args,
             "results": results,
         })
+
+    create_html_report(results_collection)
 
     save_results({
         "system_info": sys_info,
