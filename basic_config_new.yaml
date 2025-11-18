@@ -1,4 +1,5 @@
 global:
+  project_name: "MyBenchmarkProject"
   num_cores: 1
   numa_policy: interleave
   max_memory_mb: 8192

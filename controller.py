@@ -8,8 +8,7 @@ Usage:
     python3 controller.py ./workloads/a.exe --runs 5
 """
 
-from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 import argparse
 import json
 import os
@@ -17,7 +16,6 @@ import subprocess
 import sys
 import time
 import yaml
-import html
 
 # Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
 # Sysfs paths may differ on other distros, kernels, or hardware setups.
@@ -88,7 +86,8 @@ def detect_amd_secure_modes():
     return {"sme_active": sme_active, "sev_active": sev_active}
 
 
-def detect_numa_topology():
+def detect_numa_topology():  # todo why does this generate such a long list, maybe threading stuff
+    return None  # disable until fixed
     base = "/sys/devices/system/node/"
     nodes = {}
 
@@ -170,8 +169,6 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
     if not os.path.exists(source_path):
         print(f"[ERROR] Source file not found: {source_path}")
         sys.exit(1)
-
-    os.makedirs(output_dir, exist_ok=True)
 
     ext = os.path.splitext(source_path)[1]
     output_name = os.path.splitext(os.path.basename(source_path))[0]
@@ -280,7 +277,11 @@ def run_benchmark(exec_path, args, iter_total, warmup_runs, numa_policy, perf_co
 # SLURM
 # --------------------------------------------------------------
 def dispatch_slurm_script(
-    benchmark_args, config_path, exclusive_node=False, output_dir="output"
+    benchmark_args,
+    config_path,
+    results_folder_name,
+    exclusive_node=False,
+    output_dir="output",
 ):
     os.makedirs(output_dir, exist_ok=True)
 
@@ -288,14 +289,17 @@ def dispatch_slurm_script(
     max_cores = max(b["num_cores"] for b in benchmark_args)
     max_mem = max(b["max_memory_mb"] for b in benchmark_args)
 
-    job_script = build_single_slurm_script(
-        job_name="amd-secure-bench",
+    job_script = build_slurm_scipt(
+        job_name=benchmark_args[0][
+            "project_name"
+        ],  # todo change project name usage here
         max_num_cores=max_cores,
         max_memory_mb=max_mem,
         config_path=config_path,
         output_dir=output_dir,
         benchmark_args=benchmark_args,
         exclusive_node=exclusive_node,
+        results_folder_name=results_folder_name,
     )
 
     result = subprocess.run(
@@ -306,7 +310,7 @@ def dispatch_slurm_script(
         print(f"[WARNING] SLURM stderr: {result.stderr.strip()}")
 
 
-def build_single_slurm_script(
+def build_slurm_scipt(
     job_name,
     max_num_cores,
     max_memory_mb,
@@ -314,6 +318,7 @@ def build_single_slurm_script(
     output_dir,
     benchmark_args,
     exclusive_node,
+    results_folder_name,
 ):
     script_header = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -332,7 +337,7 @@ echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {m
     for idx, b in enumerate(benchmark_args):
         ulimit_kb = b["max_memory_mb"] * 1024
 
-        execution_command = f"ulimit -v {ulimit_kb}; python3 controller.py {config_path} --benchmark-index {idx}"
+        execution_command = f"ulimit -v {ulimit_kb}; python3 controller.py {config_path} --benchmark-index {idx} --temp_output {results_folder_name}"
 
         srun_command = f"""
 export OMP_NUM_THREADS={b['num_cores']}
@@ -343,19 +348,22 @@ srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c "{execution_command}"
 """
         srun_commands.append(srun_command)
 
-    script_body = "\n".join(srun_commands)
-    script_footer = f"""
+    script_benchmarks = "\n".join(srun_commands)
+    script_benchmarks_done_msg = f"""
 echo "[INFO] All benchmarks completed."
 """
-    a = (
+    script_html_report = f"""
+echo "[INFO] Generating HTML report."
+python3 create_report.py {results_folder_name}/*.json ", 
+    """
+    return (
         script_header
         + (script_exclusive_node if exclusive_node else "")
         + script_start_msg
-        + script_body
-        + script_footer
+        + script_benchmarks
+        + script_benchmarks_done_msg
+        + script_html_report
     )
-    print(a)
-    return a
 
 
 # --------------------------------------------------------------
@@ -386,26 +394,6 @@ def parse_perf_output(perf_stderr):
     return perf_data
 
 
-def aggregate_perf_results(runs_results):
-    # It is possible that perf sometimes misses events unfortunately, for aggregation we only consider runs where the event was recorded
-    agg = {}
-    all_events = {event for r in runs_results for event in r["perf"].keys()}
-
-    for event in sorted(all_events):
-        values = [float(r["perf"][event]) for r in runs_results if event in r["perf"]]
-        if not values:
-            continue
-        agg[event] = {
-            "values": values,
-            "count": len(values),
-            "avg": sum(values) / len(values),
-            "min": min(values),
-            "max": max(values),
-        }
-
-    return agg
-
-
 # --------------------------------------------------------------
 # Config handling
 # --------------------------------------------------------------
@@ -425,6 +413,7 @@ def load_config(path):  # simpler and better error handling
         sys.exit(1)
 
     global_params = config["global"]
+    project_name = global_params.get("project_name", "amd-secure-bench")
     num_cores = global_params.get("num_cores", 1)
     numa_policy = global_params.get("numa_policy", "interleave")
     max_memory_mb = global_params.get("max_memory_mb", 8192)
@@ -451,6 +440,7 @@ def load_config(path):  # simpler and better error handling
         sys.exit(1)
 
     global_params = {
+        "project_name": project_name,
         "num_cores": num_cores,
         "numa_policy": numa_policy,
         "max_memory_mb": max_memory_mb,
@@ -490,6 +480,7 @@ def load_config(path):  # simpler and better error handling
             sys.exit(1)
         benchmark_args.append(
             {
+                "project_name": project_name,
                 "source": b["source"],
                 "args": b.get("args", []),
                 "runs": b.get("runs", 1),
@@ -518,15 +509,12 @@ def print_perf_summary(agg):  # Currently not used as unformatted json is saved
         )
 
 
-def save_results(data, output_dir="results"):
+def save_results(data, output_dir, index):
     """
     Saves benchmark results (already structured) to a JSON file.
     Returns the full path to the saved file.
     """
-    os.makedirs(output_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"results_{timestamp}.json"
+    filename = f"results_{index}.json"
     file_path = os.path.join(output_dir, filename)
 
     try:
@@ -537,186 +525,6 @@ def save_results(data, output_dir="results"):
     except Exception as e:
         print(f"[ERROR] Failed to save results: {e}")
         return None
-
-
-# --------------------------------------------------------------
-# HTML Report
-# --------------------------------------------------------------
-def create_html_report(compiled_results, output_dir="results"):
-    import statistics
-
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    report_path = os.path.join(output_dir, f"report_{timestamp}.html")
-
-    html_content = """
-<html>
-<head>
-    <title>amd-secure-bench Report</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-        }
-        h1 {
-            text-align: center;
-        }
-        h2 {
-            border-left: 5px solid #007acc;
-            padding-left: 10px;
-            margin-top: 40px;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 20px;
-            font-size: 13px;
-            table-layout: fixed;
-        }
-        table th, table td {
-            border: 1px solid #bbb;
-            padding: 4px 6px;
-            line-height: 1.2;
-        }
-        table th {
-            background: #007acc;
-            color: white;
-        }
-        .meta {
-            background: #eef6ff;
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
-        .perf-data {
-            font-family: monospace;
-            white-space: pre;
-            background: #f2f2f2;
-            padding: 4px 6px;
-            border-radius: 4px;
-        }
-        .details {
-            display: none;
-            margin-top: 10px;
-        }
-        .show-btn {
-            background: #007acc;
-            color: white;
-            border: none;
-            padding: 6px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-bottom: 10px;
-        }
-        .show-btn:hover {
-            background: #005c99;
-        }
-    </style>
-
-    <script>
-    function toggleDetails(id) {
-        const el = document.getElementById(id);
-        el.style.display = (el.style.display === "none" || el.style.display === "") 
-            ? "block" 
-            : "none";
-    }
-    </script>
-</head>
-<body>
-    <h1>amd-secure-bench Benchmark Report</h1>
-"""
-
-    for b_i, b in enumerate(compiled_results):
-
-        html_content += f"<h2>Benchmark: {html.escape(b['source'])}</h2>"
-
-        html_content += "<div class='meta'>"
-        html_content += (
-            f"<b>Compiler Flags:</b> {html.escape(' '.join(b['compiler_flags']))}<br>"
-        )
-        html_content += f"<b>Runs:</b> {b['runs']} &nbsp;&nbsp; "
-        html_content += f"<b>Warmup:</b> {b['warmup_runs']}<br>"
-        html_content += f"<b>Args:</b> {html.escape(' '.join(b['args'])) if b['args'] else 'None'}<br>"
-        html_content += "</div>"
-
-        runtimes = [r["runtime"] for r in b["results"]]
-        runtime_avg = sum(runtimes) / len(runtimes)
-        runtime_min = min(runtimes)
-        runtime_max = max(runtimes)
-        runtime_std = statistics.stdev(runtimes) if len(runtimes) > 1 else 0.0
-
-        html_content += "<h3>Runtime Summary</h3>"
-        html_content += """
-        <table>
-            <tr><th>Average (s)</th><th>Min (s)</th><th>Max (s)</th><th>Stddev (s)</th></tr>
-        """
-        html_content += f"""
-            <tr>
-                <td>{runtime_avg:.6f}</td>
-                <td>{runtime_min:.6f}</td>
-                <td>{runtime_max:.6f}</td>
-                <td>{runtime_std:.6f}</td>
-            </tr>
-        </table>
-        """
-
-        agg_perf = aggregate_perf_results(b["results"])
-
-        html_content += "<h3>Performance Counter Summary</h3>"
-        html_content += """
-        <table>
-            <tr><th>Event</th><th>Average</th><th>Min</th><th>Max</th></tr>
-        """
-
-        for event, stats in agg_perf.items():
-            html_content += f"""
-            <tr>
-                <td>{html.escape(event)}</td>
-                <td>{stats['avg']:.2f}</td>
-                <td>{stats['min']:.2f}</td>
-                <td>{stats['max']:.2f}</td>
-            </tr>
-            """
-
-        html_content += "</table>"
-
-        detail_id = f"details_{b_i}"
-
-        html_content += f"""
-        <button class="show-btn" onclick="toggleDetails('{detail_id}')">
-            Show per-run details
-        </button>
-        """
-
-        html_content += f"<div class='details' id='{detail_id}'>"
-
-        # per-run table
-        html_content += """
-        <h3>Per-Run Results</h3>
-        <table>
-            <tr><th>Iteration</th><th>Runtime (s)</th><th>Perf Counters</th></tr>
-        """
-
-        for r in b["results"]:
-            perf_data_str = "<br>".join(f"{k}: {v}" for k, v in r["perf"].items())
-
-            html_content += f"""
-            <tr>
-                <td>{r['iteration']}</td>
-                <td>{r['runtime']:.6f}</td>
-                <td><div class="perf-data">{perf_data_str}</div></td>
-            </tr>
-            """
-
-        html_content += "</table>"
-        html_content += "</div>"  # end details
-
-    html_content += "</body></html>"
-
-    with open(report_path, "w") as f:
-        f.write(html_content)
-
-    print(f"[INFO] HTML report generated: {report_path}")
 
 
 # --------------------------------------------------------------
@@ -734,6 +542,16 @@ if __name__ == "__main__":
         type=str,
         help="Comma-separated index to run (used by SLURM jobs)",
     )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        help="Number of benchmark runs (overrides config)",
+    )
+    parser.add_argument(
+        "--temp_output",
+        type=str,
+        nargs="?",
+    )
 
     args = parser.parse_args()
 
@@ -745,13 +563,21 @@ if __name__ == "__main__":
     benchmark_args = load_config(config_path)
 
     if not args.benchmark_index:
-        dispatch_slurm_script(benchmark_args, config_path)
+        # this is what remains as controller after extracing execution file
+        results_folder_name = (
+            "results/"
+            + benchmark_args[0]["project_name"]
+            + datetime.now().strftime("_%Y%m%d-%H%M%S")
+        )
+        os.makedirs(results_folder_name, exist_ok=True)
+        dispatch_slurm_script(benchmark_args, config_path, results_folder_name)
         print("[INFO] SLURM jobs submitted. Exiting local process.")
         sys.exit(0)
 
     # pick those particular benchmark infos from the config
     benchmark_args = benchmark_args[int(args.benchmark_index)]
 
+    b_project_name = benchmark_args["project_name"]
     b_num_cores = benchmark_args["num_cores"]
     b_max_memory_mb = benchmark_args["max_memory_mb"]
     b_numa_policy = benchmark_args["numa_policy"]
@@ -776,6 +602,7 @@ if __name__ == "__main__":
     )
 
     compiled_results = {
+        "project_name": b_project_name,
         "source": b_source,
         "runs": b_runs,
         "warmup_runs": b_warmup_runs,
@@ -788,5 +615,7 @@ if __name__ == "__main__":
         {
             "system_info": sys_info,
             "benchmarks": compiled_results,
-        }
+        },
+        output_dir=args.temp_output,
+        index=args.benchmark_index,
     )
