@@ -215,8 +215,10 @@ def build_exec_command(
     """
     Build the full subprocess command.
     """
+    exec_path_abs = os.path.abspath(exec_path)
+    args_abs = [os.path.abspath(arg) for arg in args]
 
-    base_cmd = [exec_path, *args]
+    base_cmd = [exec_path_abs, *args_abs]
 
     if use_perf:
         perf_cmd = ["perf", "stat", "-x,"]
@@ -540,7 +542,7 @@ def save_results(data, output_dir="results"):
 # --------------------------------------------------------------
 # HTML Report
 # --------------------------------------------------------------
-def create_html_report(results_collection, output_dir="results"):
+def create_html_report(compiled_results, output_dir="results"):
     import statistics
 
     os.makedirs(output_dir, exist_ok=True)
@@ -624,7 +626,7 @@ def create_html_report(results_collection, output_dir="results"):
     <h1>amd-secure-bench Benchmark Report</h1>
 """
 
-    for b_i, b in enumerate(results_collection):
+    for b_i, b in enumerate(compiled_results):
 
         html_content += f"<h2>Benchmark: {html.escape(b['source'])}</h2>"
 
@@ -747,6 +749,7 @@ if __name__ == "__main__":
         print("[INFO] SLURM jobs submitted. Exiting local process.")
         sys.exit(0)
 
+    # pick those particular benchmark infos from the config
     benchmark_args = benchmark_args[int(args.benchmark_index)]
 
     b_num_cores = benchmark_args["num_cores"]
@@ -775,13 +778,11 @@ if __name__ == "__main__":
     compiled_results = {
         "source": b_source,
         "runs": b_runs,
-        "compiler_flags": b_flags,
         "warmup_runs": b_warmup_runs,
+        "compiler_flags": b_flags,
         "args": b_args,
         "results": results,
     }
-
-    create_html_report(compiled_results)
 
     save_results(
         {
