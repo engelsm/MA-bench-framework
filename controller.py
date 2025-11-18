@@ -225,11 +225,11 @@ def build_exec_command(
         base_cmd = perf_cmd + base_cmd
 
     if numa_policy:
-        cpu_list = get_slurm_cpu_list()
-        cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
+    #    cpu_list = get_slurm_cpu_list()
+    #    cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
         numa_flag = NUMA_FLAGS[numa_policy]
 
-        base_cmd = ["numactl", cpu_flag, numa_flag] + base_cmd
+        base_cmd = ["numactl", numa_flag] + base_cmd
 
     return base_cmd
 
@@ -282,58 +282,76 @@ def run_benchmark(
 # --------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------
-def dispatch_slurm_scripts(benchmark_args, config_path, output_dir="output"):
+def dispatch_single_slurm_script(benchmark_args, config_path, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
 
-    # 1. Gruppen nach SLURM-Ressourcen
-    groups = defaultdict(list)
-    for idx, b in enumerate(benchmark_args):
-        key = (b["num_cores"], b["max_memory_mb"])
-        groups[key].append(idx)
+    # 1. Maximale Ressourcen für den #SBATCH Header ermitteln
+    max_cores = max(b["num_cores"] for b in benchmark_args)
+    max_mem = max(b["max_memory_mb"] for b in benchmark_args)
+    
+    # Optional: Ein einziger Job-Name für das gesamte Skript
+    job_name = f"AllBenchmarks_Max{max_cores}c_{max_mem}MB"
 
-    # 2. Pro Gruppe SBATCH-Skript erzeugen und dispatchen
-    for (cores, mem), indices in groups.items():
-        job_name = (
-            f"{b['source'].split('/')[-1]}_{b['num_cores']}c_{b['max_memory_mb']}MB"
-        )
-        job_script = build_slurm_script(
-            job_name=job_name,
-            num_cores=cores,
-            max_memory_mb=mem,
-            config_path=config_path,
-            output_dir=output_dir,
-            benchmark_indices=indices,
-        )
+    # 2. Skript mit allen srun Steps bauen
+    job_script = build_single_slurm_script(
+        job_name=job_name,
+        max_num_cores=max_cores,
+        max_memory_mb=max_mem,
+        config_path=config_path,
+        output_dir=output_dir,
+        benchmark_args=benchmark_args, # Alle Argumente übergeben
+    )
 
-        result = subprocess.run(
-            ["sbatch"], input=job_script, capture_output=True, text=True
-        )
-        print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
-        if result.stderr:
-            print(f"[WARNING] SLURM stderr: {result.stderr.strip()}")
+    # 3. Einzelnes Skript dispatchen
+    result = subprocess.run(
+        ["sbatch"], input=job_script, capture_output=True, text=True
+    )
+    print(f"[INFO] Submitted single SLURM job: {result.stdout.strip()}")
+    if result.stderr:
+        print(f"[WARNING] SLURM stderr: {result.stderr.strip()}")
 
 
-def build_slurm_script(
-    job_name, num_cores, max_memory_mb, config_path, output_dir, benchmark_indices
+def build_single_slurm_script(
+    job_name, max_num_cores, max_memory_mb, config_path, output_dir, benchmark_args
 ):
     """
-    Baut ein SLURM-Skript als String.
+    Baut ein einzelnes SLURM-Skript mit sequenziellen srun Job Steps.
     """
-    # Benchmark-Indizes als CSV übergeben
-    indices_str = ",".join(map(str, benchmark_indices))
-
-    job_script = f"""#!/bin/bash
+    
+    # --- SBATCH Header: Fordert maximale Ressourcen an --- todo hier exclusive anfordern option
+    script_header = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --cpus-per-task={num_cores}
+#SBATCH --cpus-per-task={max_num_cores}
 #SBATCH --mem={max_memory_mb}MB
 #SBATCH --output={output_dir}/slurm-%j.out
 
-# Controller starten und nur die gewählten Benchmarks ausführen
-srun python3 controller.py {config_path} --benchmark-indices {indices_str}
+echo "Starting SLURM job with max resources: {max_num_cores} cores and {max_memory_mb}MB"
 """
 
-    return job_script
+    srun_commands = []
+    for idx, b in enumerate(benchmark_args):
+        ulimit_kb = b['max_memory_mb'] * 1024 
+        
+        # Der Befehl, der ausgeführt werden soll
+        execution_command = f"ulimit -v {ulimit_kb}; python3 controller.py {config_path} --benchmark-indices {idx}"
 
+        srun_command = f"""
+echo "--- Starting Benchmark {idx} (Cores: {b['num_cores']}, Mem: {b['max_memory_mb']}MB) ---"
+export OMP_NUM_THREADS={b['num_cores']}
+
+# >>> HIER WIRD DER BEFEHL GEPRIINT <<<
+echo "Executing: srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c \\"{execution_command}\\""
+
+# Startet den Job Step
+srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c "{execution_command}"
+"""
+        srun_commands.append(srun_command)
+        script_body = "\n".join(srun_commands)
+        script_footer = f"""
+echo "All benchmarks completed."
+"""
+    
+    return script_header + script_body + script_footer
 
 # --------------------------------------------------------------
 # Perf parsing and aggregation
@@ -715,6 +733,12 @@ if __name__ == "__main__":
         type=str,
         help="Comma-separated indices to run (used by SLURM jobs)",
     )
+    parser.add_argument(
+        "--html",
+        action="store_true",
+        help="placeholder variable, todo put this in new func"
+
+    )
 
     args = parser.parse_args()
 
@@ -729,7 +753,7 @@ if __name__ == "__main__":
     # SLURM Mode
     # -----------------------
     if not args.local and not args.benchmark_indices:
-        dispatch_slurm_scripts(benchmark_args, config_path)
+        dispatch_single_slurm_script(benchmark_args, config_path)
         print("[INFO] SLURM jobs submitted. Exiting local process.")
         sys.exit(0)
 
