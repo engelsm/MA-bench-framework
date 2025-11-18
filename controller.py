@@ -225,8 +225,8 @@ def build_exec_command(
         base_cmd = perf_cmd + base_cmd
 
     if numa_policy:
-    #    cpu_list = get_slurm_cpu_list()
-    #    cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
+        #    cpu_list = get_slurm_cpu_list()
+        #    cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
         numa_flag = NUMA_FLAGS[numa_policy]
 
         base_cmd = ["numactl", numa_flag] + base_cmd
@@ -237,16 +237,11 @@ def build_exec_command(
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(
-    exec_path, args, iter_total, warmup_runs, num_cores, numa_policy, perf_counters
-):
+def run_benchmark(exec_path, args, iter_total, warmup_runs, numa_policy, perf_counters):
     """
-    Executes a given benchmark executable one or more times and aggregates performance results.
-    Each iteration runs the binary by calling `run_single_benchmark`.
-    After all iterations complete, average and total runtimes are computed.
+    Executes a given benchmark executable one or more times.
     """
 
-    print(args)
     cmd = build_exec_command(exec_path, numa_policy, perf_counters, args)
     printable_cmd = " ".join(cmd)
 
@@ -282,76 +277,84 @@ def run_benchmark(
 # --------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------
-def dispatch_single_slurm_script(benchmark_args, config_path, output_dir="output"):
+def dispatch_slurm_script(
+    benchmark_args, config_path, exclusive_node=False, output_dir="output"
+):
     os.makedirs(output_dir, exist_ok=True)
 
-    # 1. Maximale Ressourcen für den #SBATCH Header ermitteln
+    # max resources across all benchmarks
     max_cores = max(b["num_cores"] for b in benchmark_args)
     max_mem = max(b["max_memory_mb"] for b in benchmark_args)
-    
-    # Optional: Ein einziger Job-Name für das gesamte Skript
-    job_name = f"AllBenchmarks_Max{max_cores}c_{max_mem}MB"
 
-    # 2. Skript mit allen srun Steps bauen
     job_script = build_single_slurm_script(
-        job_name=job_name,
+        job_name="amd-secure-bench",
         max_num_cores=max_cores,
         max_memory_mb=max_mem,
         config_path=config_path,
         output_dir=output_dir,
-        benchmark_args=benchmark_args, # Alle Argumente übergeben
+        benchmark_args=benchmark_args,
+        exclusive_node=exclusive_node,
     )
 
-    # 3. Einzelnes Skript dispatchen
     result = subprocess.run(
         ["sbatch"], input=job_script, capture_output=True, text=True
     )
-    print(f"[INFO] Submitted single SLURM job: {result.stdout.strip()}")
+    print(f"[INFO] Submitted SLURM job: {result.stdout.strip()}")
     if result.stderr:
         print(f"[WARNING] SLURM stderr: {result.stderr.strip()}")
 
 
 def build_single_slurm_script(
-    job_name, max_num_cores, max_memory_mb, config_path, output_dir, benchmark_args
+    job_name,
+    max_num_cores,
+    max_memory_mb,
+    config_path,
+    output_dir,
+    benchmark_args,
+    exclusive_node,
 ):
-    """
-    Baut ein einzelnes SLURM-Skript mit sequenziellen srun Job Steps.
-    """
-    
-    # --- SBATCH Header: Fordert maximale Ressourcen an --- todo hier exclusive anfordern option
     script_header = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --cpus-per-task={max_num_cores}
 #SBATCH --mem={max_memory_mb}MB
 #SBATCH --output={output_dir}/slurm-%j.out
-
-echo "Starting SLURM job with max resources: {max_num_cores} cores and {max_memory_mb}MB"
+"""
+    script_exclusive_node = f"""
+#SBATCH --exclusive
+"""
+    script_start_msg = f"""
+echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {max_memory_mb}MB on node $(hostname)"
 """
 
     srun_commands = []
     for idx, b in enumerate(benchmark_args):
-        ulimit_kb = b['max_memory_mb'] * 1024 
-        
-        # Der Befehl, der ausgeführt werden soll
-        execution_command = f"ulimit -v {ulimit_kb}; python3 controller.py {config_path} --benchmark-indices {idx}"
+        ulimit_kb = b["max_memory_mb"] * 1024
+
+        execution_command = f"ulimit -v {ulimit_kb}; python3 controller.py {config_path} --benchmark-index {idx}"
 
         srun_command = f"""
-echo "--- Starting Benchmark {idx} (Cores: {b['num_cores']}, Mem: {b['max_memory_mb']}MB) ---"
 export OMP_NUM_THREADS={b['num_cores']}
 
-# >>> HIER WIRD DER BEFEHL GEPRIINT <<<
-echo "Executing: srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c \\"{execution_command}\\""
+echo "[INFO] Executing: srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c \\"{execution_command}\\""
 
-# Startet den Job Step
 srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c "{execution_command}"
 """
         srun_commands.append(srun_command)
-        script_body = "\n".join(srun_commands)
-        script_footer = f"""
-echo "All benchmarks completed."
+
+    script_body = "\n".join(srun_commands)
+    script_footer = f"""
+echo "[INFO] All benchmarks completed."
 """
-    
-    return script_header + script_body + script_footer
+    a = (
+        script_header
+        + (script_exclusive_node if exclusive_node else "")
+        + script_start_msg
+        + script_body
+        + script_footer
+    )
+    print(a)
+    return a
+
 
 # --------------------------------------------------------------
 # Perf parsing and aggregation
@@ -714,6 +717,7 @@ def create_html_report(results_collection, output_dir="results"):
     print(f"[INFO] HTML report generated: {report_path}")
 
 
+# --------------------------------------------------------------
 # Main entry
 # --------------------------------------------------------------
 if __name__ == "__main__":
@@ -724,20 +728,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("config", nargs="?", help="Path to YAML configuration file.")
     parser.add_argument(
-        "--local",
-        action="store_true",
-        help="Run benchmarks locally instead of submitting SLURM jobs",
-    )
-    parser.add_argument(
-        "--benchmark-indices",
+        "--benchmark-index",
         type=str,
-        help="Comma-separated indices to run (used by SLURM jobs)",
-    )
-    parser.add_argument(
-        "--html",
-        action="store_true",
-        help="placeholder variable, todo put this in new func"
-
+        help="Comma-separated index to run (used by SLURM jobs)",
     )
 
     args = parser.parse_args()
@@ -749,64 +742,50 @@ if __name__ == "__main__":
 
     benchmark_args = load_config(config_path)
 
-    # -----------------------
-    # SLURM Mode
-    # -----------------------
-    if not args.local and not args.benchmark_indices:
-        dispatch_single_slurm_script(benchmark_args, config_path)
+    if not args.benchmark_index:
+        dispatch_slurm_script(benchmark_args, config_path)
         print("[INFO] SLURM jobs submitted. Exiting local process.")
         sys.exit(0)
 
-    # -----------------------
-    # Local / SLURM Job Mode
-    # -----------------------
-    if args.benchmark_indices:
-        indices = list(map(int, args.benchmark_indices.split(",")))
-        benchmark_args = [benchmark_args[i] for i in indices]
+    benchmark_args = benchmark_args[int(args.benchmark_index)]
 
-    results_collection = []
+    b_num_cores = benchmark_args["num_cores"]
+    b_max_memory_mb = benchmark_args["max_memory_mb"]
+    b_numa_policy = benchmark_args["numa_policy"]
+    b_source = benchmark_args["source"]
+    b_flags = benchmark_args["compiler_flags"]
+    b_runs = benchmark_args["runs"]
+    b_warmup_runs = benchmark_args["warmup_runs"]
+    b_args = benchmark_args["args"]
+    b_perf_counters = benchmark_args["perf_counters"]
 
-    for b in benchmark_args:
-        b_num_cores = b["num_cores"]
-        b_max_memory_mb = b["max_memory_mb"]
-        b_numa_policy = b["numa_policy"]
-        b_source = b["source"]
-        b_flags = b["compiler_flags"]
-        b_runs = b["runs"]
-        b_warmup_runs = b["warmup_runs"]
-        b_args = b["args"]
-        b_perf_counters = b["perf_counters"]
+    print(
+        f"\n[INFO] Running {b_source} ({b_runs} runs) with flags {b_flags} on resources {b_num_cores} cores, {b_max_memory_mb}MB memory, NUMA policy: {b_numa_policy}"
+    )
+    binary_path = compile_source(b_source, b_flags)
+    results = run_benchmark(
+        binary_path,
+        b_args,
+        b_runs,
+        b_warmup_runs,
+        b_numa_policy,
+        b_perf_counters,
+    )
 
-        print(
-            f"\n[INFO] Running {b_source} ({b_runs} runs) with flags {b_flags} on resources {b_num_cores} cores, {b_max_memory_mb}MB memory, NUMA policy: {b_numa_policy}"
-        )
-        binary_path = compile_source(b_source, b_flags)
-        results = run_benchmark(
-            binary_path,
-            b_args,
-            b_runs,
-            b_warmup_runs,
-            b_num_cores,
-            b_numa_policy,
-            b_perf_counters,
-        )
+    compiled_results = {
+        "source": b_source,
+        "runs": b_runs,
+        "compiler_flags": b_flags,
+        "warmup_runs": b_warmup_runs,
+        "args": b_args,
+        "results": results,
+    }
 
-        results_collection.append(
-            {
-                "source": b_source,
-                "runs": b_runs,
-                "compiler_flags": b_flags,
-                "warmup_runs": b_warmup_runs,
-                "args": b_args,
-                "results": results,
-            }
-        )
-
-    create_html_report(results_collection)
+    create_html_report(compiled_results)
 
     save_results(
         {
             "system_info": sys_info,
-            "benchmarks": results_collection,
+            "benchmarks": compiled_results,
         }
     )
