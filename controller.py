@@ -281,22 +281,18 @@ def dispatch_slurm_script(
     config_path,
     results_folder_name,
     exclusive_node=False,
-    output_dir="output",
 ):
-    os.makedirs(output_dir, exist_ok=True)
-
     # max resources across all benchmarks
     max_cores = max(b["num_cores"] for b in benchmark_args)
     max_mem = max(b["max_memory_mb"] for b in benchmark_args)
 
-    job_script = build_slurm_scipt(
+    job_script = build_slurm_script(
         job_name=benchmark_args[0][
             "project_name"
         ],  # todo change project name usage here
         max_num_cores=max_cores,
         max_memory_mb=max_mem,
         config_path=config_path,
-        output_dir=output_dir,
         benchmark_args=benchmark_args,
         exclusive_node=exclusive_node,
         results_folder_name=results_folder_name,
@@ -310,12 +306,11 @@ def dispatch_slurm_script(
         print(f"[WARNING] SLURM stderr: {result.stderr.strip()}")
 
 
-def build_slurm_scipt(
+def build_slurm_script(
     job_name,
     max_num_cores,
     max_memory_mb,
     config_path,
-    output_dir,
     benchmark_args,
     exclusive_node,
     results_folder_name,
@@ -324,11 +319,11 @@ def build_slurm_scipt(
 #SBATCH --job-name={job_name}
 #SBATCH --cpus-per-task={max_num_cores}
 #SBATCH --mem={max_memory_mb}MB
-#SBATCH --output={output_dir}/slurm-%j.out
+#SBATCH --output={results_folder_name}/slurm-%j.out
 """
-    script_exclusive_node = f"""
-#SBATCH --exclusive
+    script_exclusive_node = """#SBATCH --exclusive
 """
+
     script_start_msg = f"""
 echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {max_memory_mb}MB on node $(hostname)"
 """
@@ -336,26 +331,28 @@ echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {m
     srun_commands = []
     for idx, b in enumerate(benchmark_args):
         ulimit_kb = b["max_memory_mb"] * 1024
-
-        execution_command = f"ulimit -v {ulimit_kb}; python3 controller.py {config_path} --benchmark-index {idx} --temp_output {results_folder_name}"
+        execution_command = f'ulimit -v {ulimit_kb}; python3 controller.py "{config_path}" --benchmark-index {idx} --temp_output "{results_folder_name}"'
 
         srun_command = f"""
 export OMP_NUM_THREADS={b['num_cores']}
 
-echo "[INFO] Executing: srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c \\"{execution_command}\\""
+echo "[INFO] Executing benchmark index {idx} with {b['num_cores']} cores"
 
-srun --ntasks=1 --cpus-per-task={b['num_cores']} sh -c "{execution_command}"
+srun --ntasks=1 --cpus-per-task={b['num_cores']} bash -c '{execution_command}'
 """
         srun_commands.append(srun_command)
 
     script_benchmarks = "\n".join(srun_commands)
-    script_benchmarks_done_msg = f"""
+
+    script_benchmarks_done_msg = """
 echo "[INFO] All benchmarks completed."
 """
+
     script_html_report = f"""
 echo "[INFO] Generating HTML report."
-python3 create_report.py {results_folder_name}/*.json ", 
-    """
+python3 create_report.py {results_folder_name}/*.json --output "{results_folder_name}"
+"""
+
     return (
         script_header
         + (script_exclusive_node if exclusive_node else "")
@@ -564,8 +561,9 @@ if __name__ == "__main__":
 
     if not args.benchmark_index:
         # this is what remains as controller after extracing execution file
+
         results_folder_name = (
-            "results/"
+            "output/"
             + benchmark_args[0]["project_name"]
             + datetime.now().strftime("_%Y%m%d-%H%M%S")
         )

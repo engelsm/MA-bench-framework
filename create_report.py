@@ -27,19 +27,13 @@ def aggregate_perf_results(runs_results):
     return agg
 
 
-def build_report_html(compiled_results, output_file="results/report.html"):
+def build_report_html(compiled_results, output_folder="/"):
     """
     Generate an HTML report from compiled benchmark results.
 
     compiled_results: list of benchmark dicts
     output_file: path to write the HTML report
     """
-
-    output_file = Path(output_file).resolve()
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    report_path = output_file.parent / f"{output_file.stem}_{timestamp}.html"
 
     html_content = f"""
 <html>
@@ -69,7 +63,10 @@ def build_report_html(compiled_results, output_file="results/report.html"):
     <h1>amd-secure-bench Benchmark Report</h1>
 """
 
-    for b_i, b in enumerate(compiled_results):
+    for b_i, b_wrapper in enumerate(compiled_results):
+        b = b_wrapper.get(
+            "benchmarks", {}
+        )  # <- hier bekommst du das eigentliche Benchmark-Dict
         html_content += f"<h2>Benchmark: {html.escape(b.get('source', 'Unknown'))}</h2>"
 
         # Meta information
@@ -77,7 +74,7 @@ def build_report_html(compiled_results, output_file="results/report.html"):
         html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b.get('compiler_flags', [])))}<br>"
         html_content += f"<b>Runs:</b> {b.get('runs', 0)} &nbsp;&nbsp; <b>Warmup:</b> {b.get('warmup_runs', 0)}<br>"
         html_content += (
-            f"<b>Args:</b> {html.escape(' '.join(b.get('args', [])) or 'None')}<br>"
+            f"<b>Args:</b> {html.escape(' '.join(b.get('args', []) or ['None']))}<br>"
         )
         html_content += "</div>"
 
@@ -105,7 +102,7 @@ def build_report_html(compiled_results, output_file="results/report.html"):
         """
 
         # Performance counter summary
-        agg_perf = b.get("agg_perf", {})
+        agg_perf = aggregate_perf_results(b.get("results", []))
         if agg_perf:
             html_content += "<h3>Performance Counter Summary</h3>"
             html_content += (
@@ -143,10 +140,10 @@ def build_report_html(compiled_results, output_file="results/report.html"):
 
     html_content += "</body></html>"
 
-    with open(report_path, "w") as f:
+    with open(output_folder + "/report.html", "w") as f:
         f.write(html_content)
 
-    print(f"[INFO] HTML report generated: {report_path}")
+    print(f"[INFO] HTML report generated: {output_folder}/report.html")
 
 
 # --------------------------------------------------------------
@@ -162,6 +159,12 @@ if __name__ == "__main__":
         nargs="+",
         type=str,
         help="Path(s) to result JSON file(s) to include in the report",
+    )
+    parser.add_argument(
+        "--output",
+        nargs="?",
+        type=str,
+        help="Path to output folder",
     )
 
     args = parser.parse_args()
@@ -184,5 +187,5 @@ if __name__ == "__main__":
 
     # call builder
     build_report_html(
-        all_results
+        all_results, output_folder=args.output
     )  # todo think about file output location, esp. when bundling later on
