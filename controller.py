@@ -27,6 +27,110 @@ NUMA_FLAGS = {
 
 
 # --------------------------------------------------------------
+# System information
+# --------------------------------------------------------------
+def detect_system_environment():
+    """
+    Detects the system environment:
+      - Verifies Linux platform
+      - Detects CPU model and vendor
+      - Checks AMD SME and SEV secure memory modes
+    """
+
+    if not sys.platform.startswith("linux"):
+        print(
+            f"[ERROR] amd-secure-bench is intended for Linux environments only. "
+            f"You are running on: {sys.platform}"
+        )
+        sys.exit(1)
+
+    cpu_model = detect_cpu_model()
+    amd_secure_modes = detect_amd_secure_modes()
+    numa_topology = detect_numa_topology()
+
+    return {
+        "platform": sys.platform,
+        "cpu_model": cpu_model,
+        "sme_active": amd_secure_modes["sme_active"],
+        "sev_active": amd_secure_modes["sev_active"],
+        "numa_topology": numa_topology,
+    }
+
+
+def detect_cpu_model():
+    cpu_model = "Unknown CPU Model"
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.strip().startswith("model name"):
+                    cpu_model = line.strip().split(": ")[1]
+                    break
+    except Exception:
+        pass
+
+    return cpu_model
+
+
+def detect_amd_secure_modes():
+    def read_flag(path):
+        if not os.path.isfile(path):
+            return False
+        try:
+            return open(path).read().strip() == "1"
+        except:
+            return False
+
+    sme_active = read_flag("/sys/kernel/mm/mem_encrypt/active")
+    sev_active = read_flag("/sys/module/kvm_amd/parameters/sev")
+
+    return {"sme_active": sme_active, "sev_active": sev_active}
+
+
+def detect_numa_topology():  # todo why does this generate such a long list, maybe threading stuff
+    return None  # disable until fixed
+    base = "/sys/devices/system/node/"
+    nodes = {}
+
+    for entry in os.listdir(base):
+        if not entry.startswith("node"):
+            continue
+
+        node_id = entry[4:]  # extract number from "nodeX"
+        node_path = os.path.join(base, entry)
+        cpulist_path = os.path.join(node_path, "cpulist")
+        meminfo_path = os.path.join(node_path, "meminfo")
+
+        # --- CPUs ---
+        cpus = []
+        if os.path.isfile(cpulist_path):
+            try:
+                raw = open(cpulist_path).read().strip()
+                for part in raw.split(","):
+                    if "-" in part:
+                        start, end = map(int, part.split("-"))
+                        cpus.extend(range(start, end + 1))
+                    else:
+                        cpus.append(int(part))
+            except:
+                cpus = []
+
+        # --- Memory ---
+        mem_total = 0
+
+        if os.path.isfile(meminfo_path):
+            with open(meminfo_path) as f:
+                for line in f:
+                    if "MemTotal:" in line:
+                        parts = line.split()
+                        mem_total = int(parts[3])
+                        break
+
+        nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
+
+    return dict(sorted(nodes.items()))
+
+
+# --------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------
 
@@ -63,25 +167,20 @@ def get_slurm_cpu_list():
 
 
 def dispatch_slurm_script(
-    benchmark_args,
-    config_path,
-    results_folder_name,
+    b_params,
     exclusive_node=False,
 ):
     # max resources across all benchmarks
-    max_cores = max(b["num_cores"] for b in benchmark_args)
-    max_mem = max(b["max_memory_mb"] for b in benchmark_args)
+    max_cores = max(b["num_cores"] for b in b_params)
+    max_mem = max(b["max_memory_mb"] for b in b_params)
 
     job_script = build_slurm_script(
-        job_name=benchmark_args[0][
-            "project_name"
-        ],  # todo change project name usage here
+        job_name=b_params[0]["project_name"],  # todo change project name usage here
         max_num_cores=max_cores,
         max_memory_mb=max_mem,
-        config_path=config_path,
-        benchmark_args=benchmark_args,
+        b_params=b_params,
         exclusive_node=exclusive_node,
-        results_folder_name=results_folder_name,
+        output_folder=os.path.dirname(b_params[0]["json_path"]),
     )
 
     result = subprocess.run(
@@ -96,16 +195,15 @@ def build_slurm_script(
     job_name,
     max_num_cores,
     max_memory_mb,
-    config_path,
-    benchmark_args,
+    b_params,
     exclusive_node,
-    results_folder_name,
+    output_folder,
 ):
     script_header = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --cpus-per-task={max_num_cores}
 #SBATCH --mem={max_memory_mb}MB
-#SBATCH --output={results_folder_name}/slurm-%j.out
+#SBATCH --output={output_folder}/slurm-%j.out
 """
     script_exclusive_node = """#SBATCH --exclusive
 """
@@ -115,14 +213,16 @@ echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {m
 """
 
     srun_commands = []
-    for idx, b in enumerate(benchmark_args):
+    for b in b_params:
         ulimit_kb = b["max_memory_mb"] * 1024
-        execution_command = f'ulimit -v {ulimit_kb}; python3 executor.py "{config_path}" --benchmark-index {idx} --temp_output "{results_folder_name}"'
+        execution_command = (
+            f"ulimit -v {ulimit_kb}; python3 executor.py '{b['json_path']}'"
+        )
 
         srun_command = f"""
 export OMP_NUM_THREADS={b['num_cores']}
 
-echo "[INFO] Executing benchmark index {idx} with {b['num_cores']} cores"
+echo "[INFO] Executing {b['json_path']} with {b['num_cores']} cores"
 
 srun --ntasks=1 --cpus-per-task={b['num_cores']} bash -c '{execution_command}'
 """
@@ -136,7 +236,7 @@ echo "[INFO] All benchmarks completed."
 
     script_html_report = f"""
 echo "[INFO] Generating HTML report."
-python3 create_report.py {results_folder_name}/*.json --output "{results_folder_name}"
+python3 create_report.py {output_folder}/*.json --output "{output_folder}"
 """
 
     return (
@@ -208,7 +308,7 @@ def load_config(path):  # simpler and better error handling
         print("[ERROR] No benchmarks defined in config file.")
         sys.exit(1)
 
-    benchmark_args = []
+    b_params = []
     for b in benchmarks:
         if not "source" in b:
             print("[ERROR] Each benchmark entry must have a 'source' field.")
@@ -233,11 +333,11 @@ def load_config(path):  # simpler and better error handling
                 f"[ERROR] 'compiler_flags' field must be a list in benchmark: {b['source']}"
             )
             sys.exit(1)
-        benchmark_args.append(
+        b_params.append(
             {
                 "project_name": project_name,
                 "source": b["source"],
-                "args": b.get("args", []),
+                "cli_args": b.get("args", []),
                 "runs": b.get("runs", 1),
                 "warmup_runs": b.get("warmup_runs", 0),
                 "num_cores": b.get("num_cores", num_cores),
@@ -248,33 +348,43 @@ def load_config(path):  # simpler and better error handling
             }
         )
 
-    return benchmark_args
+    return b_params
 
 
 # --------------------------------------------------------------
 # Main entry
 # --------------------------------------------------------------
 if __name__ == "__main__":
-
+    sysinfo = detect_system_environment()
     parser = argparse.ArgumentParser(
         description="Run the amd-secure-bench benchmarking tool."
     )
-    parser.add_argument("config", nargs="?", help="Path to YAML configuration file.")
-
+    parser.add_argument(
+        "config_path", nargs="?", help="Path to YAML configuration file."
+    )
     args = parser.parse_args()
 
-    config_path = args.config
+    config_path = args.config_path
     if not config_path or not os.path.exists(config_path):
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    benchmark_args = load_config(config_path)
+    b_params = load_config(config_path)
 
     results_folder_name = (
         "output/"
-        + benchmark_args[0]["project_name"]
+        + b_params[0]["project_name"]
         + datetime.now().strftime("_%Y%m%d-%H%M%S")
     )
     os.makedirs(results_folder_name, exist_ok=True)
-    dispatch_slurm_script(benchmark_args, config_path, results_folder_name)
+    for i, b in enumerate(b_params):
+        json_path = os.path.join(
+            results_folder_name,
+            f"benchmark_{i}.json",
+        )
+        b["json_path"] = json_path
+        with open(json_path, "w") as f:
+            json.dump({"sys_info": sysinfo, "b_infos": b}, f, indent=4)
+
+    dispatch_slurm_script(b_params)
     print("[INFO] SLURM jobs submitted. Exiting local process.")
