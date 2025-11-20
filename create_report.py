@@ -1,8 +1,48 @@
 import argparse
 import json
 import html
-from pathlib import Path
 import statistics
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate an HTML report from benchmark result JSON(s)"
+    )
+    parser.add_argument(
+        "json_files",
+        nargs="+",
+        type=str,
+        help="Path(s) to result JSON file(s) to include in the report",
+    )
+    parser.add_argument(
+        "--output",
+        nargs="?",
+        type=str,
+        help="Path to output folder",
+    )
+
+    args = parser.parse_args()
+
+    paths = [Path(p).resolve() for p in args.json_files]
+
+    if len(paths) == 0:
+        raise ValueError("You must pass at least one JSON file.")
+
+    all_results = []
+    for p in paths:
+        with open(p) as f:
+            all_results.append(json.load(f))
+
+    output_dir = Path(args.output) if args.output else None
+    if output_dir:
+        if output_dir.exists() and not output_dir.is_dir():
+            raise NotADirectoryError(
+                f"Output path exists but is not a directory: {output_dir}"
+            )
+
+    build_report_html(all_results, output_dir)
+    # todo think about file output location, esp. when bundling later on
 
 
 def aggregate_perf_results(runs_results):
@@ -143,44 +183,5 @@ def build_report_html(compiled_results, output_dir):
     print(f"[INFO] HTML report generated: {output_dir}/report.html")
 
 
-# --------------------------------------------------------------
-# Main entry
-# --------------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate an HTML report from benchmark result JSON(s)"
-    )
-    parser.add_argument(
-        "json_files",
-        nargs="+",
-        type=str,
-        help="Path(s) to result JSON file(s) to include in the report",
-    )
-    parser.add_argument(
-        "--output",
-        nargs="?",
-        type=str,
-        help="Path to output folder",
-    )
-
-    args = parser.parse_args()
-
-    paths = [Path(p).resolve() for p in args.json_files]
-
-    if len(paths) == 0:
-        raise ValueError("You must pass at least one JSON file.")
-
-    all_results = []
-    for p in paths:
-        with open(p) as f:
-            all_results.append(json.load(f))
-
-    output_dir = Path(args.output) if args.output else None
-    if output_dir:
-        if output_dir.exists() and not output_dir.is_dir():
-            raise NotADirectoryError(
-                f"Output path exists but is not a directory: {output_dir}"
-            )
-
-    build_report_html(all_results, output_dir)
-    # todo think about file output location, esp. when bundling later on
+    main()

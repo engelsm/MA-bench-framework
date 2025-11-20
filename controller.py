@@ -1,23 +1,35 @@
 import argparse
-from datetime import datetime
 import json
 import os
 import subprocess
 import sys
 import yaml
+from datetime import datetime
 
 # Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
 # Sysfs paths may differ on other distros, kernels, or hardware setups.
 
-NUMA_FLAGS = {
-    "local": "--localalloc",
-    "interleave": "--interleave=all",
-}
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run the amd-secure-bench benchmarking tool."
+    )
+    parser.add_argument(
+        "config_path", nargs="?", help="Path to YAML configuration file."
+    )
+    args = parser.parse_args()
+
+    config_params = load_config(args.config_path)
+
+    output_subfolder_name = create_output_subfolder(config_params[0]["project_name"])
+
+    write_jsons(detect_system_environment(), config_params, output_subfolder_name)
+
+    dispatch_slurm_script(config_params)
+
+    print("[INFO] SLURM jobs submitted. Exiting local process.")
 
 
-# --------------------------------------------------------------
-# System information
-# --------------------------------------------------------------
 def detect_system_environment():
     if not sys.platform.startswith("linux"):
         print(
@@ -112,42 +124,6 @@ def detect_numa_topology():  # todo why does this generate such a long list, may
     return dict(sorted(nodes.items()))
 
 
-# --------------------------------------------------------------
-# SLURM
-# --------------------------------------------------------------
-
-
-def get_slurm_cpu_list():  # not used currently
-    job_id = os.environ.get("SLURM_JOB_ID")
-    if not job_id:
-        print("[ERROR] SLURM_JOB_ID not found in environment.")
-        sys.exit(1)
-
-    cpuset_path = f"/sys/fs/cgroup/system.slice/slurmstepd.scope/job_{job_id}/step_0/cpuset.cpus.effective"
-
-    if not os.path.exists(cpuset_path):
-        print(f"[ERROR] cpuset file not found: {cpuset_path}")
-        sys.exit(1)
-
-    with open(cpuset_path, "r") as f:
-        spec = f.read().strip()
-
-    if not spec:
-        print(f"[ERROR] Empty cpuset specification in: {cpuset_path}")
-        sys.exit(1)
-
-    # Expand list like '0-3,8,10-12' into [0,1,2,3,8,10,11,12]
-    cpu_list = []
-    for part in spec.split(","):
-        if "-" in part:
-            start, end = map(int, part.split("-"))
-            cpu_list.extend(range(start, end + 1))
-        else:
-            cpu_list.append(int(part))
-
-    return cpu_list
-
-
 def dispatch_slurm_script(
     b_params,
     exclusive_node=False,
@@ -229,15 +205,17 @@ python3 create_report.py {output_folder}/*.json --output "{output_folder}"
     )
 
 
-# --------------------------------------------------------------
-# Config handling
-# --------------------------------------------------------------
 class ConfigError(Exception):
     """Custom exception for config-related errors."""
 
 
 def load_config(path):
     """Loads YAML config file and returns parsed parameters."""
+
+    NUMA_POLICY = {
+        "local": "--localalloc",
+        "interleave": "--interleave=all",
+    }
 
     with open(path, "r") as f:
         config = yaml.safe_load(f) or {}
@@ -300,10 +278,11 @@ def load_config(path):
                 f"num_cores must be a positive integer, got: {b_params['num_cores']}"
             )
 
-        if b_params["numa_policy"] not in NUMA_FLAGS:
+        if b_params["numa_policy"] not in NUMA_POLICY:
             raise ConfigError(
-                f"Invalid numa_policy, got: {b_params['numa_policy']}, expected one of: {list(NUMA_FLAGS.keys())}"
+                f"Invalid numa_policy, got: {b_params['numa_policy']}, expected one of: {list(NUMA_POLICY.keys())}"
             )
+        b_params["numa_policy"] = NUMA_POLICY[b_params["numa_policy"]]
 
         if (
             not isinstance(b_params["max_memory_mb"], int)
@@ -359,24 +338,5 @@ def write_jsons(sysinfo, config_params, output_folder):
             json.dump({"sys_info": sysinfo, "b_infos": b}, f, indent=4)
 
 
-# --------------------------------------------------------------
-# Main entry
-# --------------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run the amd-secure-bench benchmarking tool."
-    )
-    parser.add_argument(
-        "config_path", nargs="?", help="Path to YAML configuration file."
-    )
-    args = parser.parse_args()
-
-    config_params = load_config(args.config_path)
-
-    output_subfolder_name = create_output_subfolder(config_params[0]["project_name"])
-
-    write_jsons(detect_system_environment(), config_params, output_subfolder_name)
-
-    dispatch_slurm_script(config_params)
-
-    print("[INFO] SLURM jobs submitted. Exiting local process.")
+    main()
