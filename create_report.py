@@ -63,10 +63,7 @@ def build_report_html(compiled_results, output_folder="/"):
     <h1>amd-secure-bench Benchmark Report</h1>
 """
 
-    for b_i, b_wrapper in enumerate(compiled_results):
-        b = b_wrapper.get(
-            "benchmarks", {}
-        )  # <- hier bekommst du das eigentliche Benchmark-Dict
+    for i, b in enumerate(compiled_results):
         html_content += f"<h2>Benchmark: {html.escape(b.get('source', 'Unknown'))}</h2>"
 
         # Meta information
@@ -120,7 +117,7 @@ def build_report_html(compiled_results, output_folder="/"):
             html_content += "</table>"
 
         # Per-run details
-        detail_id = f"details_{b_i}"
+        detail_id = f"details_{i}"
         html_content += f"<button class='show-btn' onclick=\"toggleDetails('{detail_id}')\">Show per-run details</button>"
         html_content += f"<div class='details' id='{detail_id}'>"
 
