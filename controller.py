@@ -117,7 +117,7 @@ def detect_numa_topology():  # todo why does this generate such a long list, may
 # --------------------------------------------------------------
 
 
-def get_slurm_cpu_list():
+def get_slurm_cpu_list():  # not used currently
     job_id = os.environ.get("SLURM_JOB_ID")
     if not job_id:
         print("[ERROR] SLURM_JOB_ID not found in environment.")
@@ -157,7 +157,7 @@ def dispatch_slurm_script(
     max_mem = max(b["max_memory_mb"] for b in b_params)
 
     job_script = build_slurm_script(
-        job_name=b_params[0]["project_name"],  # todo change project name usage here
+        job_name=b_params[0]["project_name"],
         max_num_cores=max_cores,
         max_memory_mb=max_mem,
         b_params=b_params,
@@ -232,103 +232,115 @@ python3 create_report.py {output_folder}/*.json --output "{output_folder}"
 # --------------------------------------------------------------
 # Config handling
 # --------------------------------------------------------------
+class ConfigError(Exception):
+    """Custom exception for config-related errors."""
 
 
-def load_config(path):  # simpler and better error handling
+def load_config(path):
     """Loads YAML config file and returns parsed parameters."""
-    if not os.path.exists(path):
-        print(f"[ERROR] Config file not found: {path}")
-        sys.exit(1)
 
-    try:
-        with open(path, "r") as f:
-            config = yaml.safe_load(f) or {}
-    except Exception as e:
-        print(f"[ERROR] Failed to load config file: {e}")
-        sys.exit(1)
+    with open(path, "r") as f:
+        config = yaml.safe_load(f) or {}
 
-    global_params = config["global"]
-    project_name = global_params.get("project_name", "amd-secure-bench")
-    num_cores = global_params.get("num_cores", 1)
-    numa_policy = global_params.get("numa_policy", "interleave")
-    max_memory_mb = global_params.get("max_memory_mb", 8192)
-    perf_counters = global_params.get("perf_counters", [])
-    compiler_flags = global_params.get("compiler_flags", [])
-
-    if not isinstance(num_cores, int):
-        print(f"[ERROR] num_cores must be an integer, got: {num_cores}")
-        sys.exit(1)
-    if num_cores <= 0:
-        print(f"[ERROR] Invalid num_cores in config: {num_cores}. Must be >= 1")
-        sys.exit(1)
-
-    if numa_policy not in NUMA_FLAGS:
-        print(
-            f"[ERROR] Invalid numa_policy in config: {numa_policy}. Must be 'local' or 'interleave'."
-        )
-        sys.exit(1)
-
-    if not isinstance(max_memory_mb, int) or max_memory_mb <= 0:
-        print(
-            f"[ERROR] Invalid max_memory_mb in config: {max_memory_mb}. Must be a positive integer."
-        )
-        sys.exit(1)
-
-    global_params = {
-        "project_name": project_name,
-        "num_cores": num_cores,
-        "numa_policy": numa_policy,
-        "max_memory_mb": max_memory_mb,
-        "perf_counters": perf_counters,
-        "compiler_flags": compiler_flags,
+    default_params = {
+        "project_name": "amd-secure-bench",
+        "num_cores": 1,
+        "numa_policy": "interleave",
+        "max_memory_mb": 8192,
+        "perf_counters": [],
+        "compiler_flags": [],
+        "args": [],
+        "runs": 1,
+        "warmup_runs": 0,
     }
 
-    benchmarks = config["benchmarks"]
+    global_params = config.get("global", {})
+    benchmarks = config.get("benchmarks")
     if not benchmarks:
-        print("[ERROR] No benchmarks defined in config file.")
-        sys.exit(1)
+        raise ConfigError("No benchmarks defined in config file.")
 
-    b_params = []
+    b_params_all = []
     for b in benchmarks:
-        if not "source" in b:
-            print("[ERROR] Each benchmark entry must have a 'source' field.")
-            sys.exit(1)
-        if "args" in b and not isinstance(b["args"], list):
-            print(f"[ERROR] 'args' field must be a list in benchmark: {b['source']}")
-            sys.exit(1)
-        if "runs" in b and (not isinstance(b["runs"], int) or b["runs"] <= 0):
-            print(
-                f"[ERROR] 'runs' field must be a positive integer in benchmark: {b['source']}"
-            )
-            sys.exit(1)
-        if "warmup_runs" in b and (
-            not isinstance(b["warmup_runs"], int) or b["warmup_runs"] < 0
-        ):
-            print(
-                f"[ERROR] 'warmup_runs' field must be a non-negative integer in benchmark: {b['source']}"
-            )
-            sys.exit(1)
-        if "compiler_flags" in b and not isinstance(b["compiler_flags"], list):
-            print(
-                f"[ERROR] 'compiler_flags' field must be a list in benchmark: {b['source']}"
-            )
-            sys.exit(1)
-        b_params.append(
-            {
-                "project_name": project_name,
-                "source": b["source"],
-                "cli_args": b.get("args", []),
-                "runs": b.get("runs", 1),
-                "warmup_runs": b.get("warmup_runs", 0),
-                "num_cores": b.get("num_cores", num_cores),
-                "numa_policy": b.get("numa_policy", numa_policy),
-                "max_memory_mb": b.get("max_memory_mb", max_memory_mb),
-                "perf_counters": b.get("perf_counters", perf_counters),
-                "compiler_flags": b.get("compiler_flags", compiler_flags),
-            }
-        )
+        if not b.get("source"):
+            raise ConfigError("Each benchmark entry must have a 'source' field.")
+        b_params = {
+            "project_name": global_params.get(
+                "project_name", default_params["project_name"]
+            ),
+            "source": b["source"],
+            "args": b.get("args", global_params.get("args", default_params["args"])),
+            "runs": b.get("runs", global_params.get("runs", default_params["runs"])),
+            "warmup_runs": b.get(
+                "warmup_runs",
+                global_params.get("warmup_runs", default_params["warmup_runs"]),
+            ),
+            "num_cores": b.get(
+                "num_cores", global_params.get("num_cores", default_params["num_cores"])
+            ),
+            "numa_policy": b.get(
+                "numa_policy",
+                global_params.get("numa_policy", default_params["numa_policy"]),
+            ),
+            "max_memory_mb": b.get(
+                "max_memory_mb",
+                global_params.get("max_memory_mb", default_params["max_memory_mb"]),
+            ),
+            "perf_counters": b.get(
+                "perf_counters",
+                global_params.get("perf_counters", default_params["perf_counters"]),
+            ),
+            "compiler_flags": b.get(
+                "compiler_flags",
+                global_params.get("compiler_flags", default_params["compiler_flags"]),
+            ),
+        }
 
-    return b_params
+        if not isinstance(b_params["num_cores"], int) or b_params["num_cores"] <= 0:
+            raise ConfigError(
+                f"num_cores must be a positive integer, got: {b_params['num_cores']}"
+            )
+
+        if b_params["numa_policy"] not in NUMA_FLAGS:
+            raise ConfigError(
+                f"Invalid numa_policy, got: {b_params['numa_policy']}, expected one of: {list(NUMA_FLAGS.keys())}"
+            )
+
+        if (
+            not isinstance(b_params["max_memory_mb"], int)
+            or b_params["max_memory_mb"] <= 0
+        ):
+            raise ConfigError(
+                f"max_memory_mb must be a positive integer, got: {b_params['max_memory_mb']}"
+            )
+
+        if not isinstance(b_params["args"], list):
+            raise ConfigError(
+                f"'args' field must be a list in benchmark: {b_params['args']}"
+            )
+
+        if not isinstance(b_params["runs"], int) or b_params["runs"] <= 0:
+            raise ConfigError(
+                f"'runs' must be a positive integer in benchmark: {b_params['runs']}"
+            )
+
+        if not isinstance(b_params["warmup_runs"], int) or b_params["warmup_runs"] < 0:
+            raise ConfigError(
+                f"'warmup_runs' must be a non-negative integer in benchmark: {b_params['warmup_runs']}"
+            )
+
+        if not isinstance(b_params["compiler_flags"], list):
+            raise ConfigError(
+                f"'compiler_flags' field must be a list in benchmark: {b_params['compiler_flags']}"
+            )
+
+        if not isinstance(b_params["perf_counters"], list):
+            raise ConfigError(
+                f"'perf_counters' field must be a list in benchmark: {b_params['perf_counters']}"
+            )
+
+        b_params_all.append(b_params)
+
+    return b_params_all
 
 
 def create_output_subfolder(project_name):
@@ -351,7 +363,6 @@ def write_jsons(sysinfo, config_params, output_folder):
 # Main entry
 # --------------------------------------------------------------
 if __name__ == "__main__":
-    sysinfo = detect_system_environment()
     parser = argparse.ArgumentParser(
         description="Run the amd-secure-bench benchmarking tool."
     )
@@ -359,17 +370,12 @@ if __name__ == "__main__":
         "config_path", nargs="?", help="Path to YAML configuration file."
     )
     args = parser.parse_args()
-    config_path = args.config_path
 
-    if not config_path or not os.path.exists(config_path):
-        print(f"[ERROR] Config file not found: {config_path}")
-        sys.exit(1)
-
-    config_params = load_config(config_path)
+    config_params = load_config(args.config_path)
 
     output_subfolder_name = create_output_subfolder(config_params[0]["project_name"])
 
-    write_jsons(sysinfo, config_params, output_subfolder_name)
+    write_jsons(detect_system_environment(), config_params, output_subfolder_name)
 
     dispatch_slurm_script(config_params)
 

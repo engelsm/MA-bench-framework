@@ -47,13 +47,9 @@ def compile_source(source_path, compiler_flags=None, output_dir="workloads/build
     cmd = [compiler] + compiler_flags + ["-o", binary_path, source_path]
     print(f"[INFO] Compiling: {' '.join(cmd)}")
 
-    try:
-        subprocess.run(cmd, check=True)
-        print(f"[INFO] Compilation successful: {binary_path}")
-        return binary_path
-    except Exception as e:
-        print(f"[ERROR] Compilation failed: {e}")
-        sys.exit(1)
+    subprocess.run(cmd, check=True)
+    print(f"[INFO] Compilation successful: {binary_path}")
+    return binary_path
 
 
 # --------------------------------------------------------------
@@ -147,7 +143,7 @@ def parse_perf_output(perf_stderr):
         if not value.strip() or value == "<not supported>":
             continue
 
-        try:
+        try:  # its not that bad if this fails
             perf_data[event] = float(value.replace(",", ""))
         except ValueError:
             continue
@@ -171,12 +167,9 @@ def print_perf_summary(agg):  # Currently not used as unformatted json is saved
 def append_json(path, data_old, results):
     data_old["results"] = results
 
-    try:
-        with open(path, "w") as f:
-            json.dump(data_old, f, indent=2)
-        return path
-    except:
-        return None
+    with open(path, "w") as f:
+        json.dump(data_old, f, indent=2)
+    return path
 
 
 # --------------------------------------------------------------
@@ -203,7 +196,7 @@ if __name__ == "__main__":
     compiler_flags = params["compiler_flags"]
     runs = params["runs"]
     warmup_runs = params["warmup_runs"]
-    cli_args = params["cli_args"]
+    args = params["args"]
     perf_counters = params["perf_counters"]
 
     print(
@@ -213,11 +206,11 @@ if __name__ == "__main__":
 
     if warmup_runs > 0:
         warmup_cmd = build_exec_command(
-            binary_path, numa_policy, None, cli_args, use_perf=False
+            binary_path, numa_policy, None, args, use_perf=False
         )
         run_warmup(warmup_cmd, warmup_runs)
 
-    cmd = build_exec_command(binary_path, numa_policy, perf_counters, cli_args)
+    cmd = build_exec_command(binary_path, numa_policy, perf_counters, args)
     results = run_benchmark(cmd, runs)
 
     append_json(json_path, json_obj, results)

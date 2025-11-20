@@ -1,8 +1,6 @@
 import argparse
 import json
-import os
 import html
-from datetime import datetime
 from pathlib import Path
 import statistics
 
@@ -27,7 +25,7 @@ def aggregate_perf_results(runs_results):
     return agg
 
 
-def build_report_html(compiled_results, output_folder="/"):
+def build_report_html(compiled_results, output_dir):
     """
     Generate an HTML report from compiled benchmark results.
 
@@ -138,10 +136,11 @@ def build_report_html(compiled_results, output_folder="/"):
 
     html_content += "</body></html>"
 
-    with open(output_folder + "/report.html", "w") as f:
+    report_path = output_dir / "report.html"
+    with report_path.open("w") as f:
         f.write(html_content)
 
-    print(f"[INFO] HTML report generated: {output_folder}/report.html")
+    print(f"[INFO] HTML report generated: {output_dir}/report.html")
 
 
 # --------------------------------------------------------------
@@ -149,9 +148,8 @@ def build_report_html(compiled_results, output_folder="/"):
 # --------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate an HTML report from benchmark result JSONs."
+        description="Generate an HTML report from benchmark result JSON(s)"
     )
-
     parser.add_argument(
         "json_files",
         nargs="+",
@@ -167,23 +165,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # todo more/better error handling for input here
+    paths = [Path(p).resolve() for p in args.json_files]
 
-    json_paths = [Path(f).resolve() for f in args.json_files]
+    if len(paths) == 0:
+        raise ValueError("You must pass at least one JSON file.")
 
-    # check files exist
-    for jp in json_paths:
-        if not jp.is_file():
-            raise FileNotFoundError(f"Result JSON not found: {jp}")
-
-    # read and merge JSONs
     all_results = []
-    for jp in json_paths:
-        with open(jp) as f:
-            data = json.load(f)
-            all_results.append(data)
+    for p in paths:
+        with open(p) as f:
+            all_results.append(json.load(f))
 
-    # call builder
-    build_report_html(
-        all_results, output_folder=args.output
-    )  # todo think about file output location, esp. when bundling later on
+    output_dir = Path(args.output) if args.output else None
+    if output_dir:
+        if output_dir.exists() and not output_dir.is_dir():
+            raise NotADirectoryError(
+                f"Output path exists but is not a directory: {output_dir}"
+            )
+
+    build_report_html(all_results, output_dir)
+    # todo think about file output location, esp. when bundling later on
