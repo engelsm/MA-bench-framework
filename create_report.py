@@ -64,15 +64,16 @@ def build_report_html(compiled_results, output_folder="/"):
 """
 
     for i, b in enumerate(compiled_results):
-        html_content += f"<h2>Benchmark: {html.escape(b.get('source', 'Unknown'))}</h2>"
+        b_infos = b.get("b_infos", {})
+        html_content += (
+            f"<h2>Benchmark: {html.escape(b_infos.get('source', 'Unknown'))}</h2>"
+        )
 
         # Meta information
         html_content += "<div class='meta'>"
-        html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b.get('compiler_flags', [])))}<br>"
-        html_content += f"<b>Runs:</b> {b.get('runs', 0)} &nbsp;&nbsp; <b>Warmup:</b> {b.get('warmup_runs', 0)}<br>"
-        html_content += (
-            f"<b>Args:</b> {html.escape(' '.join(b.get('args', []) or ['None']))}<br>"
-        )
+        html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b_infos.get('compiler_flags', [])))}<br>"
+        html_content += f"<b>Runs:</b> {b_infos.get('runs', 0)} &nbsp;&nbsp; <b>Warmup:</b> {b_infos.get('warmup_runs', 0)}<br>"
+        html_content += f"<b>Args:</b> {html.escape(' '.join(b_infos.get('args', []) or ['None']))}<br>"
         html_content += "</div>"
 
         # Runtime summary
