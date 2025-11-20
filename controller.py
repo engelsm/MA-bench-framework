@@ -351,6 +351,22 @@ def load_config(path):  # simpler and better error handling
     return b_params
 
 
+def create_output_subfolder(project_name):
+    timestamp = datetime.now().strftime("_%Y%m%d-%H%M%S")
+    folder_name = f"output/{project_name}{timestamp}"
+    os.makedirs(folder_name, exist_ok=True)
+    return folder_name
+
+
+def write_jsons(sysinfo, config_params, output_folder):
+    for i, b in enumerate(config_params):
+        json_path = os.path.join(output_folder, f"benchmark_{i}.json")
+        b["json_path"] = json_path
+
+        with open(json_path, "w") as f:
+            json.dump({"sys_info": sysinfo, "b_infos": b}, f, indent=4)
+
+
 # --------------------------------------------------------------
 # Main entry
 # --------------------------------------------------------------
@@ -363,28 +379,18 @@ if __name__ == "__main__":
         "config_path", nargs="?", help="Path to YAML configuration file."
     )
     args = parser.parse_args()
-
     config_path = args.config_path
+
     if not config_path or not os.path.exists(config_path):
         print(f"[ERROR] Config file not found: {config_path}")
         sys.exit(1)
 
-    b_params = load_config(config_path)
+    config_params = load_config(config_path)
 
-    results_folder_name = (
-        "output/"
-        + b_params[0]["project_name"]
-        + datetime.now().strftime("_%Y%m%d-%H%M%S")
-    )
-    os.makedirs(results_folder_name, exist_ok=True)
-    for i, b in enumerate(b_params):
-        json_path = os.path.join(
-            results_folder_name,
-            f"benchmark_{i}.json",
-        )
-        b["json_path"] = json_path
-        with open(json_path, "w") as f:
-            json.dump({"sys_info": sysinfo, "b_infos": b}, f, indent=4)
+    output_subfolder_name = create_output_subfolder(config_params[0]["project_name"])
 
-    dispatch_slurm_script(b_params)
+    write_jsons(sysinfo, config_params, output_subfolder_name)
+
+    dispatch_slurm_script(config_params)
+
     print("[INFO] SLURM jobs submitted. Exiting local process.")
