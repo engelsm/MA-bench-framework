@@ -89,30 +89,33 @@ def build_exec_command(
 # --------------------------------------------------------------
 # Benchmark runner
 # --------------------------------------------------------------
-def run_benchmark(exec_path, args, iter_total, warmup_runs, numa_policy, perf_counters):
+def run_warmup(cmd, runs):
+    """
+    Executes warmup runs for the benchmark.
+    """
+    cmd_printable = " ".join(warmup_cmd)
+    print(f"[INFO] Starting warmup run(s) with command: {cmd_printable}")
+
+    for i in range(runs):
+        print(f"[INFO] Running warmup iteration {i+1}/{runs}")
+        subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )  # mute output
+
+
+def run_benchmark(cmd, runs):
     """
     Executes a given benchmark executable one or more times.
     """
 
-    cmd = build_exec_command(exec_path, numa_policy, perf_counters, args)
-    printable_cmd = " ".join(cmd)
-
-    print(f"[INFO] Starting benchmark run: {printable_cmd}")
-
     results = []
-    for i in range(warmup_runs):
-        print(f"[INFO] Running warmup iteration {i+1}/{warmup_runs}")
-        subprocess.run(
-            build_exec_command(exec_path, numa_policy, None, args, use_perf=False)
-        )
-    for i in range(iter_total):
-        print(f"[INFO] Running iteration {i}/{iter_total}")
+    for i in range(runs):
+        print(f"[INFO] Running benchmark iteration {i+1}/{runs}")
         runtime_start = time.perf_counter()
         proc = subprocess.run(cmd, capture_output=True, text=True)
         runtime_end = time.perf_counter()
         result = {
             "iteration": i,
-            "command": printable_cmd,
             "returncode": proc.returncode,
             "stdout": proc.stdout.strip(),
             "stderr": proc.stderr.strip(),
@@ -120,8 +123,6 @@ def run_benchmark(exec_path, args, iter_total, warmup_runs, numa_policy, perf_co
             "runtime": runtime_end - runtime_start,
         }
         results.append(result)
-
-    print(f"[INFO] Finished {iter_total} run(s). ")
 
     return results
 
@@ -155,11 +156,6 @@ def parse_perf_output(perf_stderr):
 
 
 # --------------------------------------------------------------
-# Config handling
-# --------------------------------------------------------------
-
-
-# --------------------------------------------------------------
 # Printing & saving
 # --------------------------------------------------------------
 def print_perf_summary(agg):  # Currently not used as unformatted json is saved
@@ -172,13 +168,12 @@ def print_perf_summary(agg):  # Currently not used as unformatted json is saved
         )
 
 
-def save_results(data_old, data_new, path):
-
-    data_old["results"] = data_new
+def append_json(path, data_old, results):
+    data_old["results"] = results
 
     try:
         with open(path, "w") as f:
-            json.dump(data_new, f, indent=2)
+            json.dump(data_old, f, indent=2)
         return path
     except:
         return None
@@ -201,42 +196,28 @@ if __name__ == "__main__":
 
     params = json_obj["b_infos"]
 
-    project_name = params["project_name"]
     num_cores = params["num_cores"]
     max_memory_mb = params["max_memory_mb"]
     numa_policy = params["numa_policy"]
     source = params["source"]
-    flags = params["compiler_flags"]
+    compiler_flags = params["compiler_flags"]
     runs = params["runs"]
     warmup_runs = params["warmup_runs"]
     cli_args = params["cli_args"]
     perf_counters = params["perf_counters"]
 
     print(
-        f"\n[INFO] Running {source} ({runs} runs) with flags {flags} on resources {num_cores} cores, {max_memory_mb}MB memory, NUMA policy: {numa_policy}"
+        f"\n[INFO] Running {source} ({runs} runs) with flags {compiler_flags} on resources: {num_cores} core(s), {max_memory_mb}MB memory, NUMA policy: {numa_policy}"
     )
-    binary_path = compile_source(source, flags)
-    results = run_benchmark(
-        binary_path,
-        cli_args,
-        runs,
-        warmup_runs,
-        numa_policy,
-        perf_counters,
-    )
+    binary_path = compile_source(source, compiler_flags)
 
-    compiled_results = {
-        "project_name": project_name,
-        "source": source,
-        "runs": runs,
-        "warmup_runs": warmup_runs,
-        "compiler_flags": flags,
-        "args": cli_args,
-        "results": results,
-    }
+    if warmup_runs > 0:
+        warmup_cmd = build_exec_command(
+            binary_path, numa_policy, None, cli_args, use_perf=False
+        )
+        run_warmup(warmup_cmd, warmup_runs)
 
-    save_results(
-        json_obj,
-        compiled_results,
-        json_path,
-    )
+    cmd = build_exec_command(binary_path, numa_policy, perf_counters, cli_args)
+    results = run_benchmark(cmd, runs)
+
+    append_json(json_path, json_obj, results)

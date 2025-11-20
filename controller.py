@@ -1,20 +1,9 @@
-"""
-controller.py
-----------
-
-This script serves as the main entry point of the amd-secure-bench framework.
-
-Usage:
-    python3 controller.py ./workloads/a.exe --runs 5
-"""
-
-from datetime import date, datetime
 import argparse
+from datetime import datetime
 import json
 import os
 import subprocess
 import sys
-import time
 import yaml
 
 # Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
@@ -30,13 +19,6 @@ NUMA_FLAGS = {
 # System information
 # --------------------------------------------------------------
 def detect_system_environment():
-    """
-    Detects the system environment:
-      - Verifies Linux platform
-      - Detects CPU model and vendor
-      - Checks AMD SME and SEV secure memory modes
-    """
-
     if not sys.platform.startswith("linux"):
         print(
             f"[ERROR] amd-secure-bench is intended for Linux environments only. "
@@ -221,8 +203,6 @@ echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {m
 
         srun_command = f"""
 export OMP_NUM_THREADS={b['num_cores']}
-
-echo "[INFO] Executing {b['json_path']} with {b['num_cores']} cores"
 
 srun --ntasks=1 --cpus-per-task={b['num_cores']} bash -c '{execution_command}'
 """
