@@ -8,8 +8,8 @@ from datetime import datetime
 
 # Running the script only works by calling src/controller.py from the parent dir at the moment. This will change with bundling.
 
-# Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
-# Sysfs paths may differ on other distros, kernels, or hardware setups.
+# Testing on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
+# Sysfs paths and commands used to gather system information may differ on other distros, kernels, or hardware setups.
 
 
 def main():
@@ -25,105 +25,66 @@ def main():
 
     output_dir = mk_output_dir(project_name)
 
-    write_jsons(detect_system_environment(), config_params, output_dir)
+    write_jsons(get_system_info(), config_params, output_dir)
 
     dispatch_slurm_script(config_params, project_name, output_dir)
 
     print("[INFO] SLURM jobs submitted. Exiting local process.")
 
 
-def detect_system_environment():
+def get_system_info():
     if not sys.platform.startswith("linux"):
-        print(
-            f"[ERROR] amd-secure-bench is intended for Linux environments only. "
-            f"You are running on: {sys.platform}"
-        )
-        sys.exit(1)
+        return {"error": f"Linux only, running on {sys.platform}"}
 
-    cpu_model = detect_cpu_model()
-    amd_secure_modes = detect_amd_secure_modes()
-    numa_topology = detect_numa_topology()
+    cpu_model = "Unknown"
+    sockets = cores_per_socket = threads_per_core = total_cores = total_threads = 0
+    numa_nodes = 0
+    amd_sme = amd_sev = False
 
-    return {
-        "platform": sys.platform,
-        "cpu_model": cpu_model,
-        "sme_active": amd_secure_modes["sme_active"],
-        "sev_active": amd_secure_modes["sev_active"],
-        "numa_topology": numa_topology,
-    }
-
-
-def detect_cpu_model():
-    cpu_model = "Unknown CPU Model"
+    # --- CPU info ---
     try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if line.strip().startswith("model name"):
-                    cpu_model = line.strip().split(": ")[1]
-                    break
+        out = subprocess.check_output(["lscpu"], text=True)
+        for line in out.splitlines():
+            if ":" not in line:
+                continue
+            key, value = map(str.strip, line.split(":", 1))
+            if key == "Model name":
+                cpu_model = value
+            elif key == "Socket(s)":
+                sockets = int(value)
+            elif key == "Core(s) per socket":
+                cores_per_socket = int(value)
+            elif key == "Thread(s) per core":
+                threads_per_core = int(value)
+            elif key == "CPU(s)":
+                total_threads = int(value)
+            elif key == "NUMA node(s)":
+                numa_nodes = int(value)
+        total_cores = cores_per_socket * sockets
     except Exception:
         pass
 
-    return cpu_model
-
-
-def detect_amd_secure_modes():
+    # --- AMD Secure Modes ---
     def read_flag(path):
-        if not os.path.isfile(path):
-            return False
         try:
-            return open(path).read().strip() == "1"
+            return os.path.isfile(path) and open(path).read().strip() == "1"
         except:
             return False
 
-    sme_active = read_flag("/sys/kernel/mm/mem_encrypt/active")
-    sev_active = read_flag("/sys/module/kvm_amd/parameters/sev")
+    amd_sme = read_flag("/sys/kernel/mm/mem_encrypt/active")
+    amd_sev = read_flag("/sys/module/kvm_amd/parameters/sev")
 
-    return {"sme_active": sme_active, "sev_active": sev_active}
-
-
-def detect_numa_topology():  # todo why does this generate such a long list, maybe threading stuff
-    return None  # disable until fixed
-    base = "/sys/devices/system/node/"
-    nodes = {}
-
-    for entry in os.listdir(base):
-        if not entry.startswith("node"):
-            continue
-
-        node_id = entry[4:]  # extract number from "nodeX"
-        node_path = os.path.join(base, entry)
-        cpulist_path = os.path.join(node_path, "cpulist")
-        meminfo_path = os.path.join(node_path, "meminfo")
-
-        # --- CPUs ---
-        cpus = []
-        if os.path.isfile(cpulist_path):
-            try:
-                raw = open(cpulist_path).read().strip()
-                for part in raw.split(","):
-                    if "-" in part:
-                        start, end = map(int, part.split("-"))
-                        cpus.extend(range(start, end + 1))
-                    else:
-                        cpus.append(int(part))
-            except:
-                cpus = []
-
-        # --- Memory ---
-        mem_total = 0
-
-        if os.path.isfile(meminfo_path):
-            with open(meminfo_path) as f:
-                for line in f:
-                    if "MemTotal:" in line:
-                        parts = line.split()
-                        mem_total = int(parts[3])
-                        break
-
-        nodes[int(node_id)] = {"cpus": cpus, "mem_total_kb": mem_total}
-
-    return dict(sorted(nodes.items()))
+    return {
+        "cpu_model": cpu_model,
+        "sockets": sockets,
+        "cores_per_socket": cores_per_socket,
+        "threads_per_core": threads_per_core,
+        "total_cores": total_cores,
+        "total_threads": total_threads,
+        "numa_nodes": numa_nodes,
+        "amd_SME": amd_sme,
+        "amd_SEV": amd_sev,
+    }
 
 
 def dispatch_slurm_script(

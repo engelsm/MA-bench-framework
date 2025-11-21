@@ -64,7 +64,7 @@ def aggregate_perf_results(runs_results):
     return agg
 
 
-def build_report_html(compiled_results, output_dir):
+def build_report_html(all_results, output_dir):  # todo sysinfos displayen iwo
     """
     Generate an HTML report from compiled benchmark results.
 
@@ -100,12 +100,20 @@ def build_report_html(compiled_results, output_dir):
     <h1>amd-secure-bench Benchmark Report</h1>
 """
 
-    for i, b in enumerate(compiled_results):
+    for i, b in enumerate(all_results):
         b_infos = b.get("b_infos", {})
         html_content += (
             f"<h2>Benchmark: {html.escape(b_infos.get('source', 'Unknown'))}</h2>"
         )
-
+        # System Information
+        sysinfo = b.get("sys_info")
+        if sysinfo:
+            html_content += "<div class='sysinfo'><b>System Information</b><br><table>"
+            for key, val in sysinfo.items():
+                html_content += (
+                    f"<tr><th>{key.replace('_', ' ').title()}</th><td>{val}</td></tr>"
+                )
+            html_content += "</table></div>"
         # Meta information
         html_content += "<div class='meta'>"
         html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b_infos.get('compiler_flags', [])))}<br>"
