@@ -42,7 +42,6 @@ def main():
             )
 
     build_report_html(all_results, output_dir)
-    # todo think about file output location, esp. when bundling later on
 
 
 def aggregate_perf_results(runs_results):

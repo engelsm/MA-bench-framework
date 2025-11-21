@@ -13,7 +13,7 @@ def main():
     parser.add_argument("json_path", nargs="?", help="Path to the benchmark JSON file.")
     args = parser.parse_args()
 
-    json_path = args.json_path
+    json_path = os.path.abspath(args.json_path)
 
     with open(json_path, "r") as f:
         json_obj = json.load(f)
@@ -33,7 +33,7 @@ def main():
     print(
         f"\n[INFO] Running {source} ({runs} runs) with flags {compiler_flags} on resources: {num_cores} core(s), {max_memory_mb}MB memory, NUMA policy: {numa_policy}"
     )
-    binary_path = compile_source(source, compiler_flags)
+    binary_path = compile_source(source, "workloads/builds", compiler_flags)
 
     if warmup_runs > 0:
         warmup_cmd = build_exec_command(
@@ -47,11 +47,8 @@ def main():
     append_json(json_path, json_obj, results)
 
 
-def compile_source(source_path, compiler_flags=None, output_dir="workloads/builds"):
+def compile_source(source_path, output_dir, compiler_flags=None):
     """Compiles a C/C++ source file with optional compiler flags."""
-    if not os.path.exists(source_path):
-        print(f"[ERROR] Source file not found: {source_path}")
-        sys.exit(1)
 
     ext = os.path.splitext(source_path)[1]
     output_name = os.path.splitext(os.path.basename(source_path))[0]
@@ -88,10 +85,8 @@ def build_exec_command(
     """
     Build the full subprocess command.
     """
-    exec_path_abs = os.path.abspath(exec_path)
-    args_abs = [os.path.abspath(arg) for arg in args]
 
-    base_cmd = [exec_path_abs, *args_abs]
+    base_cmd = [exec_path, *args]
 
     if use_perf:
         perf_cmd = ["perf", "stat", "-x,"]

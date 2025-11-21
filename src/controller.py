@@ -6,6 +6,8 @@ import sys
 import yaml
 from datetime import datetime
 
+# Running the script only works by calling src/controller.py from the parent dir at the moment. This will change with bundling.
+
 # Running on Red Hat Enterprise Linux 9.6 (kernel 5.14) on a dual-socket AMD EPYC 9654 system (192 CPUs, 8 NUMA nodes).
 # Sysfs paths may differ on other distros, kernels, or hardware setups.
 
@@ -176,7 +178,7 @@ echo "[INFO] Starting SLURM job with max resources: {max_num_cores} cores and {m
     for b in b_params:
         ulimit_kb = b["max_memory_mb"] * 1024
         execution_command = (
-            f"ulimit -v {ulimit_kb}; python3 executor.py '{b['json_path']}'"
+            f"ulimit -v {ulimit_kb}; python3 src/executor.py '{b['json_path']}'"
         )
 
         srun_command = f"""
@@ -194,7 +196,7 @@ echo "[INFO] All benchmarks completed."
 
     script_html_report = f"""
 echo "[INFO] Generating HTML report."
-python3 create_report.py {output_dir}/*.json --output "{output_dir}"
+python3 src/create_report.py {output_dir}/*.json --output "{output_dir}"
 """
 
     return (
@@ -219,6 +221,7 @@ def load_config(path):
         "interleave": "--interleave=all",
     }
 
+    path = os.path.abspath(path)
     with open(path, "r") as f:
         config = yaml.safe_load(f) or {}
 
@@ -246,7 +249,7 @@ def load_config(path):
         if not b.get("source"):
             raise ConfigError("Each benchmark entry must have a 'source' field.")
         b_params = {
-            "source": b["source"],
+            "source": os.path.abspath(b["source"]),
             "args": b.get("args", global_params.get("args", default_params["args"])),
             "runs": b.get("runs", global_params.get("runs", default_params["runs"])),
             "warmup_runs": b.get(
@@ -327,7 +330,7 @@ def mk_output_dir(project_name):
     timestamp = datetime.now().strftime("_%Y%m%d-%H%M%S")
     dir_name = f"output/{project_name}{timestamp}"
     os.makedirs(dir_name, exist_ok=True)
-    return dir_name
+    return os.path.abspath(dir_name)
 
 
 def write_jsons(sysinfo, config_params, output_dir):
