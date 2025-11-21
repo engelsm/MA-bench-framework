@@ -13,7 +13,7 @@ def main():
     parser.add_argument("json_path", nargs="?", help="Path to the benchmark JSON file.")
     args = parser.parse_args()
 
-    json_path = args.json_path  # todo error handling
+    json_path = args.json_path
 
     with open(json_path, "r") as f:
         json_obj = json.load(f)

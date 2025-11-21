@@ -19,13 +19,13 @@ def main():
     )
     args = parser.parse_args()
 
-    config_params = load_config(args.config_path)
+    config_params, project_name = load_config(args.config_path)
 
-    output_subfolder_name = create_output_subfolder(config_params[0]["project_name"])
+    output_dir = mk_output_dir(project_name)
 
-    write_jsons(detect_system_environment(), config_params, output_subfolder_name)
+    write_jsons(detect_system_environment(), config_params, output_dir)
 
-    dispatch_slurm_script(config_params)
+    dispatch_slurm_script(config_params, project_name, output_dir)
 
     print("[INFO] SLURM jobs submitted. Exiting local process.")
 
@@ -126,6 +126,8 @@ def detect_numa_topology():  # todo why does this generate such a long list, may
 
 def dispatch_slurm_script(
     b_params,
+    project_name,
+    output_dir,
     exclusive_node=False,
 ):
     # max resources across all benchmarks
@@ -133,12 +135,12 @@ def dispatch_slurm_script(
     max_mem = max(b["max_memory_mb"] for b in b_params)
 
     job_script = build_slurm_script(
-        job_name=b_params[0]["project_name"],
+        job_name=project_name,
         max_num_cores=max_cores,
         max_memory_mb=max_mem,
         b_params=b_params,
         exclusive_node=exclusive_node,
-        output_folder=os.path.dirname(b_params[0]["json_path"]),
+        output_dir=output_dir,
     )
 
     result = subprocess.run(
@@ -155,13 +157,13 @@ def build_slurm_script(
     max_memory_mb,
     b_params,
     exclusive_node,
-    output_folder,
+    output_dir,
 ):
     script_header = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --cpus-per-task={max_num_cores}
 #SBATCH --mem={max_memory_mb}MB
-#SBATCH --output={output_folder}/slurm-%j.out
+#SBATCH --output={output_dir}/slurm-%j.out
 """
     script_exclusive_node = """#SBATCH --exclusive
 """
@@ -192,7 +194,7 @@ echo "[INFO] All benchmarks completed."
 
     script_html_report = f"""
 echo "[INFO] Generating HTML report."
-python3 create_report.py {output_folder}/*.json --output "{output_folder}"
+python3 create_report.py {output_dir}/*.json --output "{output_dir}"
 """
 
     return (
@@ -237,14 +239,13 @@ def load_config(path):
     if not benchmarks:
         raise ConfigError("No benchmarks defined in config file.")
 
+    project_name = config.get("project_name", default_params["project_name"])
+
     b_params_all = []
     for b in benchmarks:
         if not b.get("source"):
             raise ConfigError("Each benchmark entry must have a 'source' field.")
         b_params = {
-            "project_name": global_params.get(
-                "project_name", default_params["project_name"]
-            ),
             "source": b["source"],
             "args": b.get("args", global_params.get("args", default_params["args"])),
             "runs": b.get("runs", global_params.get("runs", default_params["runs"])),
@@ -319,19 +320,19 @@ def load_config(path):
 
         b_params_all.append(b_params)
 
-    return b_params_all
+    return b_params_all, project_name
 
 
-def create_output_subfolder(project_name):
+def mk_output_dir(project_name):
     timestamp = datetime.now().strftime("_%Y%m%d-%H%M%S")
-    folder_name = f"output/{project_name}{timestamp}"
-    os.makedirs(folder_name, exist_ok=True)
-    return folder_name
+    dir_name = f"output/{project_name}{timestamp}"
+    os.makedirs(dir_name, exist_ok=True)
+    return dir_name
 
 
-def write_jsons(sysinfo, config_params, output_folder):
+def write_jsons(sysinfo, config_params, output_dir):
     for i, b in enumerate(config_params):
-        json_path = os.path.join(output_folder, f"benchmark_{i}.json")
+        json_path = os.path.join(output_dir, f"benchmark_{i}.json")
         b["json_path"] = json_path
 
         with open(json_path, "w") as f:
