@@ -64,130 +64,213 @@ def aggregate_perf_results(runs_results):
     return agg
 
 
-def build_report_html(all_results, output_dir):  # todo sysinfos displayen iwo
+def build_report_html(all_results, output_dir):
     """
-    Generate an HTML report from compiled benchmark results.
-
-    compiled_results: list of benchmark dicts
-    output_file: path to write the HTML report
+    Compact HTML report.
     """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     html_content = f"""
 <html>
 <head>
-    <title>amd-secure-bench Report</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-        h1 {{ text-align: center; }}
-        h2 {{ border-left: 5px solid #007acc; padding-left: 10px; margin-top: 40px; }}
-        table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 13px; table-layout: fixed; }}
-        table th, table td {{ border: 1px solid #bbb; padding: 4px 6px; line-height: 1.2; }}
-        table th {{ background: #007acc; color: white; }}
-        .meta {{ background: #eef6ff; padding: 10px; border-radius: 4px; margin-bottom: 20px; }}
-        .perf-data {{ font-family: monospace; white-space: pre; background: #f2f2f2; padding: 4px 6px; border-radius: 4px; }}
-        .details {{ display: none; margin-top: 10px; }}
-        .show-btn {{ background: #007acc; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; margin-bottom: 10px; }}
-        .show-btn:hover {{ background: #005c99; }}
-    </style>
-    <script>
-        function toggleDetails(id) {{
-            const el = document.getElementById(id);
-            el.style.display = (el.style.display === "none" || el.style.display === "") ? "block" : "none";
-        }}
-    </script>
+<title>amd-secure-bench Report</title>
+<style>
+    body {{
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #fff;
+        color: #111;
+        margin: 20px;
+    }}
+
+    h1 {{
+        text-align: center;
+        font-size: 2em;
+        margin-bottom: 20px;
+        color: #222;
+    }}
+
+    h2 {{
+        border-left: 3px solid #222;
+        padding-left: 10px;
+        margin-top: 25px;
+        margin-bottom: 8px;
+        font-size: 1.4em;
+        color: #222;
+    }}
+
+    h3 {{
+        margin-top: 10px;
+        margin-bottom: 5px;
+        font-size: 1.1em;
+        color: #333;
+    }}
+
+    .benchmark-block {{
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        align-items: stretch;
+        width: 100%;
+        box-sizing: border-box;
+    }}
+
+    .left-col, .right-col {{
+        flex: 1 1 0;
+        min-width: 300px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }}
+
+    .left-inner, .right-inner {{
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        flex-grow: 1;
+    }}
+
+    table {{
+        border-collapse: collapse;
+        font-size: 12px;
+        width: 100%;
+    }}
+
+    table.meta-table td, table.meta-table th {{
+        padding: 4px 6px;
+        border: 1px solid #ddd;
+        width: 50%;
+    }}
+
+    table th {{
+        background: #222;
+        color: white;
+        font-weight: bold;
+        text-align: left;
+    }}
+
+    table.data-table td, table.data-table th {{
+        padding: 4px 6px;
+        border: 1px solid #ddd;
+        text-align: left;
+        width: 25%;
+    }}
+
+    tr:nth-child(even) {{ background: #f9f9f9; }}
+    tr:nth-child(odd) {{ background: #fff; }}
+
+    .perf-data {{
+        font-family: monospace;
+        white-space: pre-wrap;
+        background: #eee;
+        padding: 4px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+    }}
+
+    .show-btn {{
+        background: #222;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-bottom: 5px;
+        font-weight: bold;
+        font-size: 12px;
+    }}
+
+    .show-btn:hover {{ background: #555; }}
+
+    .details {{
+        background: #eaeaea;
+        padding: 6px;
+        border-radius: 4px;
+        margin-top: 5px;
+    }}
+</style>
+<script>
+    function toggleDetails(id){{
+        const el = document.getElementById(id);
+        el.style.display = (el.style.display === "none" || el.style.display === "") ? "block" : "none";
+    }}
+</script>
 </head>
 <body>
-    <h1>amd-secure-bench Benchmark Report</h1>
+<h1>amd-secure-bench Benchmark Report</h1>
 """
 
     for i, b in enumerate(all_results):
         b_infos = b.get("b_infos", {})
         html_content += (
-            f"<h2>Benchmark: {html.escape(b_infos.get('source', 'Unknown'))}</h2>"
+            f"<h2>Benchmark: {html.escape(b_infos.get('source','Unknown'))}</h2>"
         )
-        # System Information
-        sysinfo = b.get("sys_info")
-        if sysinfo:
-            html_content += "<div class='sysinfo'><b>System Information</b><br><table>"
-            for key, val in sysinfo.items():
-                html_content += (
-                    f"<tr><th>{key.replace('_', ' ').title()}</th><td>{val}</td></tr>"
-                )
-            html_content += "</table></div>"
-        # Meta information
-        html_content += "<div class='meta'>"
-        html_content += f"<b>Compiler Flags:</b> {html.escape(' '.join(b_infos.get('compiler_flags', [])))}<br>"
-        html_content += f"<b>Runs:</b> {b_infos.get('runs', 0)} &nbsp;&nbsp; <b>Warmup:</b> {b_infos.get('warmup_runs', 0)}<br>"
-        html_content += f"<b>Args:</b> {html.escape(' '.join(b_infos.get('args', []) or ['None']))}<br>"
-        html_content += "</div>"
+        html_content += "<div class='benchmark-block'>"
 
-        # Runtime summary
+        # Left column
+        html_content += "<div class='left-col'><div class='left-inner'>"
+        html_content += "<b>System & Benchmark Info</b><br><table class='meta-table'>"
+        sysinfo = b.get("sys_info", {})
+        for key, val in sysinfo.items():
+            html_content += (
+                f"<tr><th>{key.replace('_',' ').title()}</th><td>{val}</td></tr>"
+            )
+
+        html_content += f"<tr><th>Compiler Flags</th><td>{html.escape(' '.join(b_infos.get('compiler_flags', [])))}</td></tr>"
+        html_content += f"<tr><th>Runs / Warmup</th><td>{b_infos.get('runs',0)} / {b_infos.get('warmup_runs',0)}</td></tr>"
+        html_content += f"<tr><th>Args</th><td>{html.escape(' '.join(b_infos.get('args',[]) or ['None']))}</td></tr>"
+        html_content += "</table></div></div>"
+
+        # Right column
+        html_content += "<div class='right-col'><div class='right-inner'>"
         runtimes = [r.get("runtime", 0.0) for r in b.get("results", [])]
-        if runtimes:
-            runtime_avg = sum(runtimes) / len(runtimes)
-            runtime_min = min(runtimes)
-            runtime_max = max(runtimes)
-            runtime_std = statistics.stdev(runtimes) if len(runtimes) > 1 else 0.0
-        else:
-            runtime_avg = runtime_min = runtime_max = runtime_std = 0.0
+        runtime_avg = sum(runtimes) / len(runtimes) if runtimes else 0.0
+        runtime_min = min(runtimes) if runtimes else 0.0
+        runtime_max = max(runtimes) if runtimes else 0.0
+        runtime_std = statistics.stdev(runtimes) if len(runtimes) > 1 else 0.0
 
-        html_content += "<h3>Runtime Summary</h3>"
-        html_content += f"""
-        <table>
-            <tr><th>Average (s)</th><th>Min (s)</th><th>Max (s)</th><th>Stddev (s)</th></tr>
-            <tr>
-                <td>{runtime_avg:.6f}</td>
-                <td>{runtime_min:.6f}</td>
-                <td>{runtime_max:.6f}</td>
-                <td>{runtime_std:.6f}</td>
-            </tr>
-        </table>
-        """
+        html_content += "<h3>Runtime Summary</h3><table class='data-table'>"
+        html_content += f"<tr><th>Avg (s)</th><th>Min (s)</th><th>Max (s)</th><th>Stddev (s)</th></tr>"
+        html_content += f"<tr><td>{runtime_avg:.6f}</td><td>{runtime_min:.6f}</td><td>{runtime_max:.6f}</td><td>{runtime_std:.6f}</td></tr>"
+        html_content += "</table>"
 
-        # Performance counter summary
         agg_perf = aggregate_perf_results(b.get("results", []))
         if agg_perf:
-            html_content += "<h3>Performance Counter Summary</h3>"
             html_content += (
-                "<table><tr><th>Event</th><th>Average</th><th>Min</th><th>Max</th></tr>"
+                "<h3>Performance Counter Summary</h3><table class='data-table'>"
+            )
+            html_content += (
+                "<tr><th>Event</th><th>Avg</th><th>Min</th><th>Max</th></tr>"
             )
             for event, stats in agg_perf.items():
-                html_content += f"""
-                <tr>
-                    <td>{html.escape(event)}</td>
-                    <td>{stats.get('avg', 0.0):.2f}</td>
-                    <td>{stats.get('min', 0.0):.2f}</td>
-                    <td>{stats.get('max', 0.0):.2f}</td>
-                </tr>
-                """
+                html_content += f"<tr><td>{html.escape(event)}</td><td>{stats['avg']:.2f}</td><td>{stats['min']:.2f}</td><td>{stats['max']:.2f}</td></tr>"
             html_content += "</table>"
+        html_content += "</div></div>"
 
-        # Per-run details
+        html_content += "</div>"  # end benchmark-block
+
         detail_id = f"details_{i}"
-        html_content += f"<button class='show-btn' onclick=\"toggleDetails('{detail_id}')\">Show per-run details</button>"
-        html_content += f"<div class='details' id='{detail_id}'>"
-
-        html_content += "<h3>Per-Run Results</h3><table><tr><th>Iteration</th><th>Runtime (s)</th><th>Perf Counters</th></tr>"
+        html_content += f"<button class='show-btn' onclick=\"toggleDetails('{detail_id}')\">Show Per-Run Details</button>"
+        html_content += f"<div class='details' id='{detail_id}' style='display:none;'>"
+        html_content += "<h3>Per-Run Results</h3><table class='data-table'><tr><th>Iter</th><th>Runtime (s)</th><th>Perf</th></tr>"
         for r in b.get("results", []):
             perf_data_str = "<br>".join(
                 f"{k}: {v}" for k, v in r.get("perf", {}).items()
             )
-            html_content += f"""
-            <tr>
-                <td>{r.get('iteration', 0)}</td>
-                <td>{r.get('runtime', 0.0):.6f}</td>
-                <td><div class="perf-data">{perf_data_str}</div></td>
-            </tr>
-            """
+            html_content += f"<tr><td>{r.get('iteration',0)}</td><td>{r.get('runtime',0.0):.6f}</td><td><div class='perf-data'>{perf_data_str}</div></td></tr>"
         html_content += "</table></div>"
 
     html_content += "</body></html>"
 
     report_path = output_dir / "report.html"
-    with report_path.open("w") as f:
+    with report_path.open("w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print(f"[INFO] HTML report generated: {output_dir}/report.html")
+    print(f"[INFO] Compact black-and-white HTML report generated: {report_path}")
 
 
 if __name__ == "__main__":
