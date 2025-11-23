@@ -18,5 +18,5 @@ benchmarks:
     warmup_runs: 1
   - source: workloads/sparse_minimal.c
     args: ["workloads/matrices/bcsstk13.mtx"]
-    runs: 5   
+    runs: 10  
     num_cores: 2

@@ -206,6 +206,7 @@ def build_report_html(all_results, output_dir):
 
     for i, b in enumerate(all_results):
         b_infos = b.get("b_infos", {})
+
         html_content += (
             f"<h2>Benchmark: {html.escape(b_infos.get('source','Unknown'))}</h2>"
         )
@@ -253,15 +254,40 @@ def build_report_html(all_results, output_dir):
 
         html_content += "</div>"  # end benchmark-block
 
+        # PER-RUN DETAILS
         detail_id = f"details_{i}"
         html_content += f"<button class='show-btn' onclick=\"toggleDetails('{detail_id}')\">Show Per-Run Details</button>"
         html_content += f"<div class='details' id='{detail_id}' style='display:none;'>"
         html_content += "<h3>Per-Run Results</h3><table class='data-table'><tr><th>Iter</th><th>Runtime (s)</th><th>Perf</th></tr>"
+
+        # Gather union of all perf events across runs
+        all_events = set()
         for r in b.get("results", []):
-            perf_data_str = "<br>".join(
-                f"{k}: {v}" for k, v in r.get("perf", {}).items()
+            for ev in r.get("perf", {}):
+                all_events.add(ev)
+        all_events = sorted(all_events)
+
+        # Print runs
+        for r in b.get("results", []):
+            perf_list = []
+            for ev in all_events:
+                val = r.get("perf", {}).get(ev)
+                if val is None:
+                    val = (
+                        "<span style='color:#b00;font-weight:bold;'>NOT RECORDED</span>"
+                    )
+                perf_list.append(f"{ev}: {val}")
+
+            perf_data_str = "<br>".join(perf_list)
+
+            html_content += (
+                f"<tr>"
+                f"<td>{r.get('iteration',0)}</td>"
+                f"<td>{r.get('runtime',0.0):.6f}</td>"
+                f"<td><div class='perf-data'>{perf_data_str}</div></td>"
+                f"</tr>"
             )
-            html_content += f"<tr><td>{r.get('iteration',0)}</td><td>{r.get('runtime',0.0):.6f}</td><td><div class='perf-data'>{perf_data_str}</div></td></tr>"
+
         html_content += "</table></div>"
 
     html_content += "</body></html>"
@@ -270,7 +296,7 @@ def build_report_html(all_results, output_dir):
     with report_path.open("w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print(f"[INFO] Compact black-and-white HTML report generated: {report_path}")
+    print(f"[INFO] HTML report generated: {report_path}")
 
 
 if __name__ == "__main__":
