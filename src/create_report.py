@@ -214,14 +214,21 @@ def build_report_html(all_results, output_dir):
 
         # Left column
         html_content += "<div class='left-col'><div class='left-inner'>"
-        html_content += "<b>System & Benchmark Info</b><br><table class='meta-table'>"
+        html_content += "<b>System Info</b><br><table class='meta-table'>"
         sysinfo = b.get("sys_info", {})
         for key, val in sysinfo.items():
             html_content += (
                 f"<tr><th>{key.replace('_',' ').title()}</th><td>{val}</td></tr>"
             )
+        html_content += "</table><br>"
+        html_content += "<b>Benchmark Info</b><br><table class='meta-table'>"
 
         html_content += f"<tr><th>Compiler Flags</th><td>{html.escape(' '.join(b_infos.get('compiler_flags', [])))}</td></tr>"
+        html_content += f"<tr><th>Numa Policy</th><td>{html.escape(' '.join(b_infos.get('numa_policy', [])))}</td></tr>"
+        html_content += (
+            f"<tr><th>Num Cores</th><td>{b_infos.get('num_cores',0)}</td></tr>"
+        )
+        html_content += f"<tr><th>Max Memory (MB)</th><td>{b_infos.get('max_memory_mb',0)}</td></tr>"
         html_content += f"<tr><th>Runs / Warmup</th><td>{b_infos.get('runs',0)} / {b_infos.get('warmup_runs',0)}</td></tr>"
         html_content += f"<tr><th>Args</th><td>{html.escape(' '.join(b_infos.get('args',[]) or ['None']))}</td></tr>"
         html_content += "</table></div></div>"
