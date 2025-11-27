@@ -13,9 +13,7 @@ from datetime import datetime
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run the amd-secure-bench benchmarking tool."
-    )
+    parser = argparse.ArgumentParser(description="Run the benchmarking tool.")
     parser.add_argument(
         "config_path", nargs="?", help="Path to YAML configuration file."
     )
@@ -187,7 +185,7 @@ def load_config(path):
         config = yaml.safe_load(f) or {}
 
     default_params = {
-        "project_name": "amd-secure-bench",
+        "project_name": "sample-bench-project",
         "num_cores": 1,
         "numa_policy": "interleave",
         "max_memory_mb": 8192,

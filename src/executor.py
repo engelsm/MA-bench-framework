@@ -7,9 +7,7 @@ import time
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run the amd-secure-bench benchmarking tool."
-    )
+    parser = argparse.ArgumentParser(description="Run the benchmarking tool.")
     parser.add_argument("json_path", nargs="?", help="Path to the benchmark JSON file.")
     args = parser.parse_args()
 

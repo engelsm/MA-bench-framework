@@ -74,7 +74,7 @@ def build_report_html(all_results, output_dir):
     html_content = f"""
 <html>
 <head>
-<title>amd-secure-bench Report</title>
+<title>Report</title>
 <style>
     body {{
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -201,7 +201,7 @@ def build_report_html(all_results, output_dir):
 </script>
 </head>
 <body>
-<h1>amd-secure-bench Benchmark Report</h1>
+<h1>Benchmark Report</h1>
 """
 
     for i, b in enumerate(all_results):
