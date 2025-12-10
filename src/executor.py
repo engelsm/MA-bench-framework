@@ -165,16 +165,6 @@ def parse_perf_output(perf_stderr):
     return perf_data
 
 
-def print_perf_summary(agg):  # Currently not used as unformatted json is saved
-    """Prints aggregated perf results in a clean format."""
-    print("\n[PERF SUMMARY]")
-    for event, stats in agg.items():
-        print(
-            f"{event:20s}: avg={stats['avg']:<10.2f} "  # formatting arguments
-            f"min={stats['min']:<10.2f} max={stats['max']:<10.2f}"
-        )
-
-
 def append_json(path, data_old, results):
     data_old["results"] = results
 
