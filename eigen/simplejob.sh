@@ -8,15 +8,21 @@ mkdir -p "$OUTDIR"
 
 echo "Output folder: $OUTDIR"
 
-# -------------------
-# Run Lanczos and time it
-# -------------------
-LANCZOS_OUT="$OUTDIR/lanczos_top_vecs.npy"
-/usr/bin/time -v python3 lanczos.py matrix_sparse.npz "$LANCZOS_OUT" \
+MATRIX="matrices/bcsstk13.mtx"
+FORMATTED_DIR="matrices/formatted"
+
+BASENAME=$(basename "$MATRIX" .mtx)
+DENSE="$FORMATTED_DIR/${BASENAME}_dense.npy"
+SPARSE="$FORMATTED_DIR/${BASENAME}_sparse.npz"
+
+LANCZOS_OUT="$OUTDIR/${BASENAME}_lanczos_top_vecs.npy"
+
+python3 src/load_matrix.py "$MATRIX"
+
+/usr/bin/time -v python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
     > "$OUTDIR/lanczos.out" 2> "$OUTDIR/lanczos.time"
 
-# -------------------
-# Run RQI using that output
-# -------------------
-/usr/bin/time -v python3 rqi.py matrix_dense.npy "$LANCZOS_OUT" \
+/usr/bin/time -v python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
     > "$OUTDIR/rqi.out" 2> "$OUTDIR/rqi.time"
+
+echo "=== DONE ==="

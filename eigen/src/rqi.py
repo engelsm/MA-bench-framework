@@ -17,26 +17,22 @@ def rqi(A, v0, maxit=20, tol=1e-12):
     return mu, v, maxit
 
 
-def rqi_all(A, eigvecs, maxit=20, tol=1e-12):
+def rqi_all(A, eigvecs):
     k = eigvecs.shape[1]
     results = []
     for i in range(k):
         v0 = eigvecs[:, i]
-        mu, v, iters = rqi(A, v0, maxit=maxit, tol=tol)
+        mu, v, iters = rqi(A, v0)
         results.append((mu, v, iters))
         print(f"RQI eigenvector {i}: refined eigenvalue {mu}, iterations {iters}")
     return results
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python rqi.py <dense_matrix.npy> <eigenvectors.npy>")
-        sys.exit(1)
+if len(sys.argv) != 3:
+    print("Usage: python rqi.py <dense_matrix.npy> <lanczos_eigenvectors.npy>")
+    sys.exit(1)
 
-    matrix_file = sys.argv[1]
-    eigenvec_file = sys.argv[2]
+A_dense = np.load(sys.argv[1])
+eigvecs = np.load(sys.argv[2])
 
-    A_dense = np.load(matrix_file)
-    eigvecs = np.load(eigenvec_file)
-
-    rqi_all(A_dense, eigvecs)
+rqi_all(A_dense, eigvecs)
