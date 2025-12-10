@@ -3,6 +3,7 @@ results/
 output/
 slurm-*.out
 job.sh
+eigen/outputs
 
 # Ignore vim files:
 *~
