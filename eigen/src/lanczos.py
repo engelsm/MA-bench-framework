@@ -12,7 +12,7 @@ output_file = sys.argv[2]
 
 A_sparse = sp.load_npz(matrix_file)
 
-k = 5  # num eigenvalues
+k = 2  # num eigenvalues
 eigvals, eigvecs = spla.eigsh(A_sparse, k=k, which="LM")
 
 np.save(output_file, eigvecs)

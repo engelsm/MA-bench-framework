@@ -1,12 +1,15 @@
 #!/bin/bash
+#SBATCH --cpus-per-task=16
 
 module load lang/SciPy-bundle/2024.05-gfbf-2024a
 
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTDIR="outputs/$TIMESTAMP"
-mkdir -p "$OUTDIR"
+CORES=(1 2 4 8 16) 
 
-echo "Output folder: $OUTDIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+MASTER_OUTDIR="outputs/benchmark_$TIMESTAMP"
+mkdir -p "$MASTER_OUTDIR"
+
+echo "Master Output folder: $MASTER_OUTDIR"
 
 MATRIX="matrices/bcsstk13.mtx"
 FORMATTED_DIR="matrices/formatted"
@@ -15,20 +18,32 @@ BASENAME=$(basename "$MATRIX" .mtx)
 DENSE="$FORMATTED_DIR/${BASENAME}_dense.npy"
 SPARSE="$FORMATTED_DIR/${BASENAME}_sparse.npz"
 
-LANCZOS_OUT="$OUTDIR/${BASENAME}_lanczos_top_vecs.npy"
+python3 src/load_matrix.py "$MATRIX" 
 
-echo "=== Loading and formatting matrix ==="
-python3 src/load_matrix.py "$MATRIX"
+for N_CORES in "${CORES[@]}"; do
+    
+    export OMP_NUM_THREADS=$N_CORES
+    
+    OUTDIR="$MASTER_OUTDIR/${N_CORES}_cores"
+    mkdir -p "$OUTDIR"
 
-echo "=== Running Lanczos (perf stat) ==="
-perf stat -o "$OUTDIR/lanczos.perf" \
-    python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
-    > "$OUTDIR/lanczos.out" 2>&1
+    echo "--- Testing with $N_CORES Core(s) (OMP_NUM_THREADS=$N_CORES) ---"
 
-echo "=== Running RQI (perf stat) ==="
-# Misst Standard-Hardware-Ereignisse und schreibt die Statistik in 'rqi.perf'
-perf stat -o "$OUTDIR/rqi.perf" \
-    python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
-    > "$OUTDIR/rqi.out" 2>&1
+    LANCZOS_OUT="$OUTDIR/${BASENAME}_lanczos_top_vecs.npy"
 
-echo "=== DONE ==="
+    echo "\n--- LANCZOS ---" >> "$OUTDIR/output.out"
+    echo "\n--- LANCZOS ---" >> "$OUTDIR/perf.time"
+
+    /usr/bin/time -v python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
+        > "$OUTDIR/output.out" 2> "$OUTDIR/perf.time"
+
+    echo "\n--- RQI ---" >> "$OUTDIR/output.out"
+    echo "\n--- RQI ---" >> "$OUTDIR/perf.time"
+
+    /usr/bin/time -v python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
+        >> "$OUTDIR/output.out" 2>> "$OUTDIR/perf.time"
+
+done
+
+echo "=== DONE BENCHMARKING ==="
+echo "Saved in $MASTER_OUTDIR"
