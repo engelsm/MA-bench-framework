@@ -17,12 +17,18 @@ SPARSE="$FORMATTED_DIR/${BASENAME}_sparse.npz"
 
 LANCZOS_OUT="$OUTDIR/${BASENAME}_lanczos_top_vecs.npy"
 
+echo "=== Loading and formatting matrix ==="
 python3 src/load_matrix.py "$MATRIX"
 
-/usr/bin/time -v python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
-    > "$OUTDIR/lanczos.out" 2> "$OUTDIR/lanczos.time"
+echo "=== Running Lanczos (perf stat) ==="
+perf stat -o "$OUTDIR/lanczos.perf" \
+    python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
+    > "$OUTDIR/lanczos.out" 2>&1
 
-/usr/bin/time -v python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
-    > "$OUTDIR/rqi.out" 2> "$OUTDIR/rqi.time"
+echo "=== Running RQI (perf stat) ==="
+# Misst Standard-Hardware-Ereignisse und schreibt die Statistik in 'rqi.perf'
+perf stat -o "$OUTDIR/rqi.perf" \
+    python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
+    > "$OUTDIR/rqi.out" 2>&1
 
 echo "=== DONE ==="

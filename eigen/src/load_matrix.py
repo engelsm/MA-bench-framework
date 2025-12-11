@@ -22,5 +22,3 @@ if sp.issparse(A):
     sp.save_npz(os.path.join(formatted_dir, f"{matrix_name}_sparse.npz"), A.tocsr())
 A_dense = A.toarray() if hasattr(A, "toarray") else np.array(A)
 np.save(os.path.join(formatted_dir, f"{matrix_name}_dense.npy"), A_dense)
-
-print(f"Matrix formatted and saved in {formatted_dir}")

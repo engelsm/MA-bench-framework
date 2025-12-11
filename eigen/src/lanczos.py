@@ -3,8 +3,8 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-if len(sys.argv) < 3:
-    print("Usage: python lanczos.py <sparse_matrix.npz> [output_eigvecs.npy]")
+if len(sys.argv) != 3:
+    print("Usage: python lanczos.py <sparse_matrix.npz> <output_eigvecs.npy>")
     sys.exit(1)
 
 matrix_file = sys.argv[1]
