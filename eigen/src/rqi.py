@@ -3,7 +3,7 @@ import numpy as np
 from scipy.linalg import lu_factor, lu_solve, norm
 
 
-def rqi(A, v0, maxit=20, tol=1e-12):
+def rqi(A, v0, maxit=3, tol=1e-12):
     v = v0 / norm(v0)  # Start vector
     for i in range(maxit):
         mu = float(

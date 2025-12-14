@@ -3,47 +3,107 @@
 
 module load lang/SciPy-bundle/2024.05-gfbf-2024a
 
-CORES=(1 2 4 8 16) 
+# ----------------------------------------
+# CONFIG
+# ----------------------------------------
+CORES=(1 2 4 8 16)
+SAMPLE_RATE=5
 
+# ----------------------------------------
+# OUTPUT
+# ----------------------------------------
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-MASTER_OUTDIR="outputs/benchmark_$TIMESTAMP"
-mkdir -p "$MASTER_OUTDIR"
+OUTDIR="outputs/benchmark_$TIMESTAMP"
+mkdir -p "$OUTDIR"
+CSV="$OUTDIR/benchmark_results.csv"
 
-echo "Master Output folder: $MASTER_OUTDIR"
+echo "cores,run,algorithm,task_duration_ms,cycles,instructions,cache_refs,cache_misses,cpu_migrations,context_switches" > "$CSV"
 
+# ----------------------------------------
+# INPUT
+# ----------------------------------------
 MATRIX="matrices/bcsstk13.mtx"
-FORMATTED_DIR="matrices/formatted"
+FORMATTED="matrices/formatted"
+BASE=$(basename "$MATRIX" .mtx)
+DENSE="$FORMATTED/${BASE}_dense.npy"
+SPARSE="$FORMATTED/${BASE}_sparse.npz"
 
-BASENAME=$(basename "$MATRIX" .mtx)
-DENSE="$FORMATTED_DIR/${BASENAME}_dense.npy"
-SPARSE="$FORMATTED_DIR/${BASENAME}_sparse.npz"
+python3 src/load_matrix.py "$MATRIX"
 
-python3 src/load_matrix.py "$MATRIX" 
+# ----------------------------------------
+# BENCHMARK
+# ----------------------------------------
+for C in "${CORES[@]}"; do
+    export OMP_NUM_THREADS=$C
+    echo "--- Cores: $C ---"
 
-for N_CORES in "${CORES[@]}"; do
-    
-    export OMP_NUM_THREADS=$N_CORES
-    
-    OUTDIR="$MASTER_OUTDIR/${N_CORES}_cores"
-    mkdir -p "$OUTDIR"
+    for R in $(seq 1 $SAMPLE_RATE); do
+        echo "  Run $R"
 
-    echo "--- Testing with $N_CORES Core(s) (OMP_NUM_THREADS=$N_CORES) ---"
+        LANCZOS_OUT="$OUTDIR/${BASE}_lanczos.npy"
+        LOBPCG_OUT="$OUTDIR/${BASE}_lobpcg.npy"
 
-    LANCZOS_OUT="$OUTDIR/${BASENAME}_lanczos_top_vecs.npy"
+        # -------------------------
+        # LANCZOS
+        # -------------------------
+        PERF_LANCZOS=$(perf stat -x, \
+            -e task-clock,cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches \
+            python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
+            2>&1 >/dev/null
+        )
 
-    echo "\n--- LANCZOS ---" >> "$OUTDIR/output.out"
-    echo "\n--- LANCZOS ---" >> "$OUTDIR/perf.time"
+        echo "$PERF_LANCZOS" | awk -F, -v c="$C" -v r="$R" -v a="LANCZOS" '
+            /task-clock/       {td=$1}
+            /cycles/           {cy=$1}
+            /instructions/     {ins=$1}
+            /cache-references/ {cr=$1}
+            /cache-misses/     {cm=$1}
+            /cpu-migrations/   {mig=$1}
+            /context-switches/ {cs=$1}
+            END {print c","r","a","td","cy","ins","cr","cm","mig","cs}
+        ' >> "$CSV"
 
-    /usr/bin/time -v python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
-        > "$OUTDIR/output.out" 2> "$OUTDIR/perf.time"
+        # -------------------------
+        # RQI
+        # -------------------------
+        PERF_RQI=$(perf stat -x, \
+            -e task-clock,cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches \
+            python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
+            2>&1 >/dev/null
+        )
 
-    echo "\n--- RQI ---" >> "$OUTDIR/output.out"
-    echo "\n--- RQI ---" >> "$OUTDIR/perf.time"
+        echo "$PERF_RQI" | awk -F, -v c="$C" -v r="$R" -v a="RQI" '
+            /task-clock/       {td=$1}
+            /cycles/           {cy=$1}
+            /instructions/     {ins=$1}
+            /cache-references/ {cr=$1}
+            /cache-misses/     {cm=$1}
+            /cpu-migrations/   {mig=$1}
+            /context-switches/ {cs=$1}
+            END {print c","r","a","td","cy","ins","cr","cm","mig","cs}
+        ' >> "$CSV"
 
-    /usr/bin/time -v python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
-        >> "$OUTDIR/output.out" 2>> "$OUTDIR/perf.time"
+        # -------------------------
+        # LOBPCG
+        # -------------------------
+        PERF_LOBPCG=$(perf stat -x, \
+            -e task-clock,cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches \
+            python3 src/lobpcg.py "$SPARSE" "$LOBPCG_OUT" \
+            2>&1 >/dev/null
+        )
 
+        echo "$PERF_LOBPCG" | awk -F, -v c="$C" -v r="$R" -v a="LOBPCG" '
+            /task-clock/       {td=$1}
+            /cycles/           {cy=$1}
+            /instructions/     {ins=$1}
+            /cache-references/ {cr=$1}
+            /cache-misses/     {cm=$1}
+            /cpu-migrations/   {mig=$1}
+            /context-switches/ {cs=$1}
+            END {print c","r","a","td","cy","ins","cr","cm","mig","cs}
+        ' >> "$CSV"
+
+    done
 done
 
-echo "=== DONE BENCHMARKING ==="
-echo "Saved in $MASTER_OUTDIR"
+echo "DONE → $CSV"

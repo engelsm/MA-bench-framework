@@ -4,6 +4,7 @@ output/
 slurm-*.out
 job.sh
 eigen/outputs
+eigen/matrices
 
 # Ignore vim files:
 *~
