@@ -1,66 +1,177 @@
-#!/bin/bash
-#SBATCH --cpus-per-task=16
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
 
-module load lang/SciPy-bundle/2024.05-gfbf-2024a
 
-CORES=(1 2 4 8 16)
+def main():
+    parser = argparse.ArgumentParser(description="Run the benchmarking tool.")
+    parser.add_argument("json_path", nargs="?", help="Path to the benchmark JSON file.")
+    args = parser.parse_args()
 
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-MASTER_OUTDIR="outputs/benchmark_$TIMESTAMP"
-mkdir -p "$MASTER_OUTDIR"
+    json_path = os.path.abspath(args.json_path)
 
-echo "Master Output folder: $MASTER_OUTDIR"
+    with open(json_path, "r") as f:
+        json_obj = json.load(f)
 
-MATRIX="matrices/bcsstk13.mtx"
-FORMATTED_DIR="matrices/formatted"
+    params = json_obj["b_infos"]
 
-BASENAME=$(basename "$MATRIX" .mtx)
-DENSE="$FORMATTED_DIR/${BASENAME}_dense.npy"
-SPARSE="$FORMATTED_DIR/${BASENAME}_sparse.npz"
+    num_cores = params["num_cores"]
+    max_memory_mb = params["max_memory_mb"]
+    numa_policy = params["numa_policy"]
+    source = params["source"]
+    compiler_flags = params["compiler_flags"]
+    runs = params["runs"]
+    warmup_runs = params["warmup_runs"]
+    args = params["args"]
+    perf_counters = params["perf_counters"]
 
-python3 src/load_matrix.py "$MATRIX"
+    print(
+        f"\n[INFO] Running {source} ({runs} runs) with flags {compiler_flags} on resources: {num_cores} core(s), {max_memory_mb}MB memory, NUMA policy: {numa_policy}"
+    )
+    binary_path = compile_source(source, "workloads/builds", compiler_flags)
 
-# ----- SINGLE GLOBAL CSV -----
-CSV_FILE="$MASTER_OUTDIR/benchmark_perf.csv"
-echo "cores,method,event,value" > "$CSV_FILE"
+    if warmup_runs > 0:
+        warmup_cmd = build_exec_command(
+            binary_path, numa_policy, None, args, use_perf=False
+        )
+        run_warmup(warmup_cmd, warmup_runs)
 
-# Perf events to collect
-EVENTS="task-clock,cycles,instructions,branches,faults"
+    cmd = build_exec_command(binary_path, numa_policy, perf_counters, args)
+    results = run_benchmark(cmd, runs)
 
-for N_CORES in "${CORES[@]}"; do
-    
-    export OMP_NUM_THREADS=$N_CORES
+    append_json(json_path, json_obj, results)
 
-    echo "--- Testing with $N_CORES Core(s) ---"
 
-    LANCZOS_OUT="$MASTER_OUTDIR/lanczos_${N_CORES}.npy"
+def compile_source(source_path, output_dir, compiler_flags=None):
+    """Compiles a C/C++ source file with optional compiler flags."""
 
-    ########################################
-    # LANCZOS RUN
-    ########################################
-    perf stat -x, -e $EVENTS \
-        python3 src/lanczos.py "$SPARSE" "$LANCZOS_OUT" \
-        > /dev/null 2> perf.tmp
+    ext = os.path.splitext(source_path)[1]
+    output_name = os.path.splitext(os.path.basename(source_path))[0]
+    binary_path = os.path.join(output_dir, output_name)
 
-    # Append perf results to ONE CSV
-    while IFS=, read -r value event _; do
-        echo "$N_CORES,LANCZOS,$event,$value" >> "$CSV_FILE"
-    done < perf.tmp
+    if ext == ".c":
+        compiler = "gcc"
+    elif ext in (".cc", ".cpp", ".cxx"):
+        compiler = "g++"
+    else:
+        print(
+            f"[ERROR] Only C/C++ source files are supported. Invalid source path: {source_path}"
+        )
+        sys.exit(1)
 
-    ########################################
-    # RQI RUN
-    ########################################
-    perf stat -x, -e $EVENTS \
-        python3 src/rqi.py "$DENSE" "$LANCZOS_OUT" \
-        > /dev/null 2> perf.tmp
+    # skip recompilation if binary is up-to-date
+    if os.path.exists(binary_path) and os.path.getmtime(binary_path) > os.path.getmtime(
+        source_path
+    ):
+        print(f"[INFO] Using cached binary (up to date): {binary_path}")
+        return binary_path
 
-    while IFS=, read -r value event _; do
-        echo "$N_CORES,RQI,$event,$value" >> "$CSV_FILE"
-    done < perf.tmp
+    cmd = [compiler] + compiler_flags + ["-o", binary_path, source_path]
+    print(f"[INFO] Compiling: {' '.join(cmd)}")
 
-done
+    subprocess.run(cmd, check=True)
+    print(f"[INFO] Compilation successful: {binary_path}")
+    return binary_path
 
-rm perf.tmp
 
-echo "=== DONE BENCHMARKING ==="
-echo "CSV saved at: $CSV_FILE"
+def build_exec_command(
+    exec_path, numa_policy, perf_counters_custom, args, use_perf=True
+):
+    """
+    Build the full subprocess command.
+    """
+
+    base_cmd = [exec_path, *args]
+
+    if use_perf:
+        perf_cmd = ["perf", "stat", "-x,"]
+        if perf_counters_custom:
+            perf_cmd += ["-e", ",".join(perf_counters_custom)]
+        base_cmd = perf_cmd + base_cmd
+
+    if numa_policy:
+        #    cpu_list = get_slurm_cpu_list() #(restore function from history if needed)
+        #    cpu_flag = f"--physcpubind={','.join(map(str, cpu_list))}"
+
+        base_cmd = ["numactl", numa_policy] + base_cmd
+
+    return base_cmd
+
+
+def run_warmup(cmd, runs):
+    """
+    Executes warmup runs for the benchmark.
+    """
+
+    cmd_printable = " ".join(cmd)
+    print(f"[INFO] Starting warmup run(s) with command: {cmd_printable}")
+
+    for i in range(runs):
+        print(f"[INFO] Running warmup iteration {i+1}/{runs}")
+        subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )  # mute output
+
+
+def run_benchmark(cmd, runs):
+    """
+    Executes a given benchmark executable one or more times.
+    """
+
+    results = []
+    for i in range(runs):
+        print(f"[INFO] Running benchmark iteration {i+1}/{runs}")
+        runtime_start = time.perf_counter()
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        runtime_end = time.perf_counter()
+        result = {
+            "iteration": i,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+            "perf": parse_perf_output(proc.stderr),
+            "runtime": runtime_end - runtime_start,
+        }
+        results.append(result)
+
+    return results
+
+
+def parse_perf_output(perf_stderr):
+    """
+    Parses 'perf stat -x,' CSV-style stderr output into a structured dictionary.
+    """
+    perf_data = {}
+
+    for line in perf_stderr.strip().splitlines():
+        parts = line.split(",")
+        if len(parts) < 3:
+            continue
+
+        value, _, event = parts[:3]
+        event = event.split(":")[0]  # remove :u, :k and other suffixes
+
+        if not value.strip() or value == "<not supported>":
+            continue
+
+        try:  # its not that bad if this fails
+            perf_data[event] = float(value.replace(",", ""))
+        except ValueError:
+            continue
+
+    return perf_data
+
+
+def append_json(path, data_old, results):
+    data_old["results"] = results
+
+    with open(path, "w") as f:
+        json.dump(data_old, f, indent=2)
+    return path
+
+
+if __name__ == "__main__":
+    main()
