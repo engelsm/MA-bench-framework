@@ -2,12 +2,38 @@
 #include <Eigen/Dense>
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
-
 #include <iostream>
-#include "load_binary_matrix.h" 
+#include "load_binary_matrix.h"
 
 using namespace Eigen;
 using namespace Spectra;
+
+
+//COMPILE WITH:
+// g++ -O3 -march=znver4 -fopenmp -I$EBROOTEIGEN -I$HOME/libs/spectra/include spectra_solver.cpp -o spectra_solver
+
+void run_spectra_solver(const SparseMatrix<double>& A)
+{
+    
+    int k = 2;      
+    int ncv = 20;   
+
+    SparseSymMatProd<double> op(A);
+    SymEigsSolver<SparseSymMatProd<double>> solver(op, k, ncv);
+    
+    solver.init();
+    solver.compute(); 
+
+    if(solver.info() != CompInfo::Successful)
+    {
+        std::cerr << "Eigenvalue computation failed!\n";
+        std::exit(1); 
+    }
+
+    MatrixXd V = solver.eigenvectors();
+    VectorXd vals = solver.eigenvalues();
+}
+
 
 int main(int argc, char** argv)
 {
@@ -17,30 +43,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // Lade die komprimierte Binary-Matrix
     auto A = load_binary_matrix(argv[1]);
 
-    int k = 2;       // Anzahl der Eigenwerte
-    int ncv = 20;    // Lanczos-Unterraum
-
-    SparseSymMatProd<double> op(A);
-    SymEigsSolver<SparseSymMatProd<double>> solver(op, k, ncv);
-
-    solver.init();
-    solver.compute();
-
-    if(solver.info() != CompInfo::Successful)
-    {
-        std::cerr << "Eigenvalue computation failed!\n";
-        return 1;
-    }
-
-    MatrixXd V = solver.eigenvectors();
-    VectorXd vals = solver.eigenvalues();
-
-    std::cout << "Top " << k << " Eigenvalues:\n";
-    for(int i = 0; i < vals.size(); i++)
-        std::cout << vals[i] << "\n";
+    run_spectra_solver(A);
 
     return 0;
 }

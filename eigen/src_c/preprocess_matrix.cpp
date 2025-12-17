@@ -1,75 +1,43 @@
-#include <Eigen/Sparse>
-#include <fstream>
 #include <iostream>
-#include <sstream>
-#include <string>
+#include <fstream>
+#include <Eigen/Sparse>
+#include <fast_matrix_market/app/Eigen.hpp>
 
 using namespace Eigen;
 
-SparseMatrix<double> load_mtx(const std::string& path)
+int main(int argc, char **argv)
 {
-    std::ifstream f(path);
-    if(!f)
-    {
-        std::cerr << "Cannot open file: " << path << "\n";
-        exit(1);
-    }
+	if (argc < 3)
+	{
+		std::cerr << "Usage: " << argv[0] << " <input.mtx> <output.dat>" << std::endl;
+		return 1;
+	}
 
-    int rows, cols, nnz;
-    std::string line;
+	SparseMatrix<double> A;
 
-    while (std::getline(f, line))
-        if (line[0] != '%') break;
+	std::ifstream f(argv[1]);
+	fast_matrix_market::read_matrix_market_eigen(f, A);
 
-    std::stringstream(line) >> rows >> cols >> nnz;
+	A.makeCompressed();
 
-    SparseMatrix<double> A(rows, cols);
-    A.reserve(nnz);
+	std::ofstream out(argv[2], std::ios::binary);
+	int rows = A.rows();
+	int cols = A.cols();
+	int nnz = A.nonZeros();
 
-    int i, j;
-    double v;
-    while(f >> i >> j >> v)
-        A.insert(i-1, j-1) = v;
+	out.write((char *)&rows, sizeof(int));
+	out.write((char *)&cols, sizeof(int));
+	out.write((char *)&nnz, sizeof(int));
 
-    A.makeCompressed();
-    return A;
-}
+	out.write((char *)A.outerIndexPtr(), sizeof(int) * (cols + 1));
+	out.write((char *)A.innerIndexPtr(), sizeof(int) * nnz);
+	out.write((char *)A.valuePtr(), sizeof(double) * nnz);
 
-void save_compressed(const SparseMatrix<double>& A, const std::string& path)
-{
-    std::ofstream out(path, std::ios::binary);
-    if(!out)
-    {
-        std::cerr << "Cannot open output file: " << path << "\n";
-        exit(1);
-    }
-
-    int rows = A.rows();
-    int cols = A.cols();
-    int nnz  = A.nonZeros();
-
-    out.write(reinterpret_cast<char*>(&rows), sizeof(int));
-    out.write(reinterpret_cast<char*>(&cols), sizeof(int));
-    out.write(reinterpret_cast<char*>(&nnz), sizeof(int));
-
-    out.write(reinterpret_cast<const char*>(A.outerIndexPtr()), sizeof(int)*(A.outerSize()+1));
-    out.write(reinterpret_cast<const char*>(A.innerIndexPtr()), sizeof(int)*nnz);
-    out.write(reinterpret_cast<const char*>(A.valuePtr()), sizeof(double)*nnz);
-
-    out.close();
-    std::cout << "Saved compressed matrix to " << path << "\n";
-}
-
-int main(int argc, char** argv)
-{
-    if(argc != 3)
-    {
-        std::cerr << "Usage: preprocess_matrix <matrix.mtx> <output_binary.dat>\n";
-        return 1;
-    }
-
-    auto A = load_mtx(argv[1]);
-    save_compressed(A, argv[2]);
-
-    return 0;
+	// For verification, print first 5 non-zero entries
+	for (int i = 0; i < 5 && i < A.nonZeros(); ++i)
+	{
+		std::cout << "Val: " << A.valuePtr()[i]
+				  << " | Row: " << A.innerIndexPtr()[i] << std::endl;
+	}
+	return 0;
 }
