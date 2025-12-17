@@ -1,12 +1,13 @@
+#define EIGEN_USE_THREADS
+#include <omp.h>
+#include <Eigen/Core>
 #include <Eigen/Sparse>
-#include <Eigen/Dense>
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/DavidsonSymEigsSolver.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
 #include "load_binary_matrix.h"
-#include <omp.h>
 
 using namespace Eigen;
 using namespace Spectra;
@@ -19,42 +20,34 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	std::string algo = argv[1];
-	auto A = load_binary_matrix(argv[2]);
-	SparseSymMatProd<double> op(A);
+	SparseMatrix<double, RowMajor> A = load_binary_matrix(argv[2]);
 
+	using OpType = SparseSymMatProd<double, 0, RowMajor>;
+	OpType op(A);
+
+	std::string algo = argv[1];
 	int k = 2;
 	int ncv = 20;
 
 	if (algo == "lanczos")
 	{
-		SymEigsSolver<SparseSymMatProd<double>> solver(op, k, ncv);
+		SymEigsSolver<OpType> solver(op, k, ncv);
 		solver.init();
 		solver.compute();
 
 		if (solver.info() == CompInfo::Successful)
 		{
-			VectorXd evals = solver.eigenvalues();
-			std::cout << "Lanczos_Eigenvalues: " << evals.transpose() << std::endl;
-		}
-		else
-		{
-			std::cerr << "Lanczos failed to converge." << std::endl;
+			std::cout << "Lanczos_Eigenvalues: " << solver.eigenvalues().transpose() << std::endl;
 		}
 	}
 	else if (algo == "davidson")
 	{
-		DavidsonSymEigsSolver<SparseSymMatProd<double>> solver(op, k);
+		DavidsonSymEigsSolver<OpType> solver(op, k);
 		solver.compute();
 
 		if (solver.info() == CompInfo::Successful)
 		{
-			VectorXd evals = solver.eigenvalues();
-			std::cout << "Davidson_Eigenvalues: " << evals.transpose() << std::endl;
-		}
-		else
-		{
-			std::cerr << "Davidson failed to converge." << std::endl;
+			std::cout << "Davidson_Eigenvalues: " << solver.eigenvalues().transpose() << std::endl;
 		}
 	}
 	else
