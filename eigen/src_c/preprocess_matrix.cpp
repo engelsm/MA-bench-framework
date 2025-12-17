@@ -36,8 +36,7 @@ int main(int argc, char **argv)
 	// For verification, print first 5 non-zero entries
 	for (int i = 0; i < 5 && i < A.nonZeros(); ++i)
 	{
-		std::cout << "Val: " << A.valuePtr()[i]
-				  << " | Row: " << A.innerIndexPtr()[i] << std::endl;
+		std::cout << "Val: " << A.valuePtr()[i] << " | Row: " << A.innerIndexPtr()[i] << std::endl;
 	}
 	return 0;
 }
