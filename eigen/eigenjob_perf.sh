@@ -1,57 +1,43 @@
 #!/bin/bash
 #SBATCH --cpus-per-task=16
-#SBATCH --job-name=Eigen_Spectra_Benchmark
+#SBATCH --job-name=Spectra_Perf_Fast
 
-# Load the required module (Eigen library)
 ml load math/Eigen/3.4.0-GCCcore-13.3.0
 
-# Define the number of cores to test
 CORES=(1 2 4 8 16)
-# Number of times to run each configuration
-SAMPLE_RATE=5
+ALGOS=("lanczos") 
+SAMPLE_RATE=2
 
-# Setup output directory and CSV file
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTDIR="outputs/benchmark_$TIMESTAMP"
+OUTDIR="outputs/perf_fast_$TIMESTAMP"
 mkdir -p "$OUTDIR"
-CSV="$OUTDIR/benchmark_results.csv"
+CSV="$OUTDIR/perf_results.csv"
 
-# Write CSV header
-echo "cores,run,algorithm,task_duration_ms,cycles,instructions,cache_refs,cache_misses,cpu_migrations,context_switches" > "$CSV"
+echo "cores,run,algorithm,real_time_s,user_time_s,sys_time_s,instructions,cycles,cache_misses" > "$CSV"
 
-# Define the matrix file
 MATRIX="matrices/binary/bcsstk13.dat"
 
-# Start the benchmark loop
 for C in "${CORES[@]}"; do
-    # Set the number of threads for OpenMP
     export OMP_NUM_THREADS=$C
-    echo "--- Cores: $C, OMP_NUM_THREADS: $OMP_NUM_THREADS ---"
+    echo "--- Cores: $C ---"
 
-    for R in $(seq 1 $SAMPLE_RATE); do
-        echo "  Run $R"
+    for ALGO in "${ALGOS[@]}"; do
+        for R in $(seq 1 $SAMPLE_RATE); do
+            echo "  Algo: $ALGO, Run: $R"
 
-        # Capture perf stat output into the PERF variable (stderr is redirected to stdout, which is then captured)
-        # The program's stdout is redirected to /dev/null
-        PERF=$(perf stat -x, \
-            -e task-clock,cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches \
-            ./src_c/spectra_solver "$MATRIX" \
-            2>&1 >/dev/null # This part is key: send stderr (perf output) to stdout, then capture stdout. The solver's stdout goes to /dev/null
-        )
+            PERF_RAW=$(perf stat -x ',' \
+                -e duration_time,user_time,system_time,instructions,cycles,cache-misses \
+                ./src_c/spectra_multi_solver "$ALGO" "$MATRIX" 2>&1 > /dev/null)
+            echo $PERF_RAW
+            # Extract the value thats before the metric name, as perf stat -x ',' outputs CSV lines  with this structure
+            REAL=$(echo "$PERF_RAW" | awk -F',' '$3=="duration_time" {print $1}')
+            USER=$(echo "$PERF_RAW" | awk -F',' '$3=="user_time" {print $1}')
+            SYS=$(echo "$PERF_RAW" | awk -F',' '$3=="system_time" {print $1}')
+            INST=$(echo "$PERF_RAW" | awk -F',' '$3=="instructions" {print $1}')
+            CYCL=$(echo "$PERF_RAW" | awk -F',' '$3=="cycles" {print $1}')
+            MISS=$(echo "$PERF_RAW" | awk -F',' '$3=="cache-misses" {print $1}')
 
-        # Parse perf output and append to CSV
-        # Note: The algorithm is hardcoded as LANCZOS based on typical use case for Eigen's spectral solvers
-        echo "$PERF" | awk -F, -v c="$C" -v r="$R" -v a="SPECTRA_ALGO" '
-            /task-clock/       {td=$1}
-            /cycles/           {cy=$1}
-            /instructions/     {ins=$1}
-            /cache-references/ {cr=$1}
-            /cache-misses/     {cm=$1}
-            /cpu-migrations/   {mig=$1}
-            /context-switches/ {cs=$1}
-            END {print c","r","a","td","cy","ins","cr","cm","mig","cs}
-        ' >> "$CSV"
+            echo "$C,$R,$ALGO,$REAL,$USER,$SYS,$INST,$CYCL,$MISS" >> "$CSV"
+        done
     done
 done
-
-echo "DONE → $CSV"

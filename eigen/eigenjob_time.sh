@@ -5,7 +5,7 @@
 ml load math/Eigen/3.4.0-GCCcore-13.3.0
 
 CORES=(1 2 4 8 16)
-ALGOS=("lanczos" "davidson")
+ALGOS=("lanczos")
 SAMPLE_RATE=2
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -17,7 +17,7 @@ echo "cores,run,algorithm,real_time_s,user_time_s,sys_time_s" > "$CSV"
 
 MATRIX="matrices/binary/venturiLevel3.dat"
 
-# g++ -O3 -march=znver4 -fopenmp -I$EBROOTEIGEN -I$HOME/libs/spectra/include ./src_c/spectra_multi_solver.cpp -o ./src_c/spectra_multi_solver
+g++ -O3 -march=znver4 -fopenmp -I$EBROOTEIGEN -I$HOME/libs/spectra/include ./src_c/spectra_multi_solver.cpp -o ./src_c/spectra_multi_solver
 
 for C in "${CORES[@]}"; do
     export OMP_NUM_THREADS=$C
