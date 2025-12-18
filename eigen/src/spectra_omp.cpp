@@ -6,33 +6,42 @@
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
-#include "load_binary_matrix.h"
+#include "util.h"
 
 // We use rowMajor for parallelization as colMajor causes write conflicts with multiple threads slowing down the computation
+// Look at https://spectralib.org/doc/sparsesymmatprod_8h_source
 struct ManualParallelOp
 {
-	using Scalar = double;
+	// Spectra expects a type named Scalar so we redefine it
+	using Scalar = ::Scalar;
 
-	// Explizite Angabe des Typs aus dem Eigen-Namensraum
-	const Eigen::SparseMatrix<double, Eigen::RowMajor> &m_mat;
+	const CustomSparseMatrix &m_mat;
 
-	ManualParallelOp(const Eigen::SparseMatrix<double, Eigen::RowMajor> &mat) : m_mat(mat) {}
+	ManualParallelOp(const CustomSparseMatrix &mat) : m_mat(mat) {}
 
-	Eigen::Index rows() const { return (int)m_mat.rows(); }
-	int cols() const { return (int)m_mat.cols(); }
+	// Spectra expects these two member functions for the operator
+	Eigen::Index rows() const { return m_mat.rows(); }
+	Eigen::Index cols() const { return m_mat.cols(); }
 
-	void perform_op(const double *x_in, double *y_out) const
+	// y_out = A * x_in
+	void perform_op(const Scalar *x_in, Scalar *y_out) const
 	{
-		// Eigen::Map erlaubt es, auf rohe Pointer wie auf Eigen-Objekte zuzugreifen
-		Eigen::Map<const Eigen::VectorXd> x(x_in, m_mat.cols());
-		Eigen::Map<Eigen::VectorXd> y(y_out, m_mat.rows());
+		// Spectra expects raw pointers for perform_op, thus we need to map them to Eigen types
 
+		// x length is equal to given matrix cols (needed for element wise multiplication)
+		Eigen::Map<const CustomVector> x{x_in, m_mat.cols()};
+		// y length is equal to given matrix rows (result of multiplication)
+		Eigen::Map<CustomVector> y{y_out, m_mat.rows()};
+
+		// TODO: OpenMP optimieren
 #pragma omp parallel for
-		for (int i = 0; i < (int)m_mat.outerSize(); ++i)
+		// Look at https://libeigen.gitlab.io/eigen/docs-nightly/group__TutorialSparse.html
+		// Iterate over rows of the matrix
+		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
 		{
-			double sum = 0;
-			// InnerIterator ist spezifisch für das Speicherlayout der SparseMatrix
-			for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator it(m_mat, i); it; ++it)
+			Scalar sum = 0;
+			// Iterate over non-zero elements in the current row using InnerIterator (locates non-zeros efficiently)
+			for (typename CustomSparseMatrix::InnerIterator it(m_mat, i); it; ++it)
 			{
 				sum += it.value() * x(it.col());
 			}
@@ -49,30 +58,24 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int max_threads = omp_get_max_threads();
-
-	// Eigen-interne Parallelisierung initialisieren
-	Eigen::initParallel();
-	Eigen::setNbThreads(max_threads);
-	std::cout << "Erzwinge Parallelisierung auf " << max_threads << " Threads." << std::endl;
-
-	// Laden der Matrix mit explizitem Typ
-	Eigen::SparseMatrix<double, Eigen::RowMajor> A = load_binary_matrix(argv[1]);
-
+	CustomSparseMatrix A = load_binary_matrix<Scalar>(argv[1]);
 	ManualParallelOp op(A);
 
-	// Spectra-Solver benötigt den Operator-Typ als Template-Parameter
-	Spectra::SymEigsSolver<ManualParallelOp> solver(op, 2, 20);
+	int eigen_vecs = 2;
+	int lanczos_vecs = 20;
+
+	Spectra::SymEigsSolver<ManualParallelOp> solver(op, eigen_vecs, lanczos_vecs);
 	solver.init();
 	solver.compute();
 
 	if (solver.info() == Spectra::CompInfo::Successful)
 	{
-		std::cout << "Eigenwerte: " << solver.eigenvalues().transpose() << std::endl;
+		Eigen::VectorXd evals = solver.eigenvalues();
+		std::cout << "Eigenvalues: " << evals.transpose() << std::endl;
 	}
 	else
 	{
-		std::cerr << "Solver konnte nicht konvergieren." << std::endl;
+		std::cerr << "Solver did not converge." << std::endl;
 	}
 
 	return 0;

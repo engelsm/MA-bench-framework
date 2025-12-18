@@ -13,7 +13,7 @@ OUTDIR="outputs/perf_$TIMESTAMP"
 mkdir -p "$OUTDIR"
 CSV="$OUTDIR/perf_results.csv"
 
-MATRIX="matrices/binary/dawson5.dat"
+MATRIX="matrices/binary/bcsstk13.dat"
 
 echo "cores,run,algorithm,matrix,real_time_s,user_time_s,sys_time_s,instructions,cycles,cache_misses" > "$CSV"
 
