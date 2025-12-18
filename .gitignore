@@ -1,12 +1,19 @@
-workloads/builds/
-results/
-output/
-slurm-*.out
-job.sh
-eigen/outputs
-eigen/matrices
+**/build/
 
-# Ignore vim files:
-*~
-*.swp
-*.swo
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json
+*.o
+
+eigen/matrices/
+eigen/outputs/
+script_builder/workloads/matrices/
+script_builder/outputs/
+
+slurm-*.out
+
+__pycache__/
+.vscode/
+.cache/

@@ -9,14 +9,13 @@ ALGOS=("lanczos")
 SAMPLE_RATE=2
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTDIR="outputs/perf_fast_$TIMESTAMP"
+OUTDIR="outputs/perf_$TIMESTAMP"
 mkdir -p "$OUTDIR"
 CSV="$OUTDIR/perf_results.csv"
 
 MATRIX="matrices/binary/dawson5.dat"
 
-echo "cores,run,algorithm,real_time_s,user_time_s,sys_time_s,instructions,cycles,cache_misses" > "$CSV"
-
+echo "cores,run,algorithm,matrix,real_time_s,user_time_s,sys_time_s,instructions,cycles,cache_misses" > "$CSV"
 
 for C in "${CORES[@]}"; do
     export OMP_NUM_THREADS=$C
@@ -25,10 +24,9 @@ for C in "${CORES[@]}"; do
     for ALGO in "${ALGOS[@]}"; do
         for R in $(seq 1 $SAMPLE_RATE); do
             echo "  Algo: $ALGO, Run: $R"
-            #stress_test confirms that our workload runs serially not sequentially
             PERF_RAW=$(perf stat -x ',' \
                 -e duration_time,user_time,system_time,instructions,cycles,cache-misses \
-                ./src_c/spectra_omp "$MATRIX" 3>&1 1>&2 2>&3)
+                ./build/spectra_omp "$MATRIX" 3>&1 1>&2 2>&3)
             # Extract the value thats before the metric name, as perf stat -x ',' outputs CSV lines  with this structure
             REAL=$(echo "$PERF_RAW" | awk -F',' '$3=="duration_time" {print $1}')
             USER=$(echo "$PERF_RAW" | awk -F',' '$3=="user_time" {print $1}')
@@ -37,7 +35,7 @@ for C in "${CORES[@]}"; do
             CYCL=$(echo "$PERF_RAW" | awk -F',' '$3=="cycles" {print $1}')
             MISS=$(echo "$PERF_RAW" | awk -F',' '$3=="cache-misses" {print $1}')
 
-            echo "$C,$R,$ALGO,$REAL,$USER,$SYS,$INST,$CYCL,$MISS" >> "$CSV"
+            echo "$C,$R,$ALGO,$MATRIX,$REAL,$USER,$SYS,$INST,$CYCL,$MISS" >> "$CSV"
         done
     done
 done

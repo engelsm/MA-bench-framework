@@ -13,7 +13,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	SparseMatrix<double> A;
+	SparseMatrix<double, RowMajor> A;
 
 	std::ifstream f(argv[1]);
 	fast_matrix_market::read_matrix_market_eigen(f, A);
@@ -29,7 +29,7 @@ int main(int argc, char **argv)
 	out.write((char *)&cols, sizeof(int));
 	out.write((char *)&nnz, sizeof(int));
 
-	out.write((char *)A.outerIndexPtr(), sizeof(int) * (cols + 1));
+	out.write((char *)A.outerIndexPtr(), sizeof(int) * (rows + 1));
 	out.write((char *)A.innerIndexPtr(), sizeof(int) * nnz);
 	out.write((char *)A.valuePtr(), sizeof(double) * nnz);
 

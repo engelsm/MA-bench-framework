@@ -287,7 +287,7 @@ def load_config(path):
 
 def mk_output_dir(project_name):
     timestamp = datetime.now().strftime("_%Y%m%d-%H%M%S")
-    dir_name = f"output/{project_name}{timestamp}"
+    dir_name = f"outputs/{project_name}{timestamp}"
     os.makedirs(dir_name, exist_ok=True)
     return os.path.abspath(dir_name)
 
