@@ -8,7 +8,6 @@
 #include <string>
 #include "util.h"
 
-// We use rowMajor for parallelization as colMajor causes write conflicts with multiple threads slowing down the computation
 // Look at https://spectralib.org/doc/sparsesymmatprod_8h_source
 struct ManualParallelOp
 {
@@ -36,7 +35,7 @@ struct ManualParallelOp
 		// TODO: OpenMP optimieren
 #pragma omp parallel for
 		// Look at https://libeigen.gitlab.io/eigen/docs-nightly/group__TutorialSparse.html
-		// Iterate over rows of the matrix
+		// Iterate over rows of the matrix as we use RowMajor storage (defined in util.h)
 		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
 		{
 			Scalar sum = 0;
@@ -58,7 +57,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	CustomSparseMatrix A = load_binary_matrix<Scalar>(argv[1]);
+	CustomSparseMatrix A = load_binary_matrix(argv[1]);
 	ManualParallelOp op(A);
 
 	int eigen_vecs = 2;
@@ -66,6 +65,7 @@ int main(int argc, char **argv)
 
 	Spectra::SymEigsSolver<ManualParallelOp> solver(op, eigen_vecs, lanczos_vecs);
 	solver.init();
+	// This is where all the work happens, i.e. continously calling our custom op.perform_op.
 	solver.compute();
 
 	if (solver.info() == Spectra::CompInfo::Successful)
