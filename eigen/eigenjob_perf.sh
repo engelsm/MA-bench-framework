@@ -6,14 +6,14 @@ ml load math/Eigen/3.4.0-GCCcore-13.3.0
 
 CORES=(1 2 4 8 16)
 ALGOS=("lanczos") 
-SAMPLE_RATE=2
+SAMPLE_RATE=5
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTDIR="outputs/perf_$TIMESTAMP"
 mkdir -p "$OUTDIR"
 CSV="$OUTDIR/perf_results.csv"
 
-MATRIX="matrices/binary/bcsstk13.dat"
+MATRIX="matrices/binary/dawson5.dat"
 
 echo "cores,run,algorithm,matrix,real_time_s,user_time_s,sys_time_s,instructions,cycles,cache_misses" > "$CSV"
 

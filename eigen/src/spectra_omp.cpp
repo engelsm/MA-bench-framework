@@ -32,7 +32,16 @@ struct ManualParallelOp
 		// y length is equal to given matrix rows (result of multiplication)
 		Eigen::Map<CustomVector> y{y_out, m_mat.rows()};
 
-		// TODO: OpenMP optimieren
+		/**
+		 * For large matrices this might be more efficient:
+		 * #pragma omp parallel for default(none) shared(x, y, m_mat) schedule(guided)
+		 * Parallel SpMV:
+		 * - default(none) & shared: Explicitly specify variable sharing to avoid accidental data races.
+		 * - schedule(guided): The rows of our sparse matrices will often times have
+		 *   varying amounts of non-zero elements. This directive helps to balance the workload
+		 *   among threads by dynamically assigning chunks of iterations depending on their size.
+		 *   (Threads that finish early can take on more work.)
+		 */
 #pragma omp parallel for
 		// Look at https://libeigen.gitlab.io/eigen/docs-nightly/group__TutorialSparse.html
 		// Iterate over rows of the matrix as we use RowMajor storage (defined in util.h)
