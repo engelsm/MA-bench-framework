@@ -36,7 +36,6 @@ struct ManualParallelOp
 		/**
 		 * For large matrices this might be more efficient:
 		 * #pragma omp parallel for default(none) shared(x, y, m_mat) schedule(guided)
-		 * Parallel SpMV:
 		 * - default(none) & shared: Explicitly specify variable sharing to avoid accidental data races.
 		 * - schedule(guided): The rows of our sparse matrices will often times have
 		 *   varying amounts of non-zero elements. This directive helps to balance the workload
@@ -49,7 +48,10 @@ struct ManualParallelOp
 		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
 		{
 			Scalar sum = 0;
-			// Iterate over non-zero elements in the current row using InnerIterator (locates non-zeros efficiently)
+			// While non-zero values are stored sequentially in memory for the custom CSR binary format
+			// (and most other sparse matrix formats), we need the InnerIterator to retrieve the associated
+			// column index (it.col()) for each value. This allows us to map the matrix element to the correct
+			// entry in vector x.
 			for (typename CustomSparseMatrix::InnerIterator it(m_mat, i); it; ++it)
 			{
 				sum += it.value() * x(it.col());
@@ -68,6 +70,7 @@ void run_solver(SolverType &solver)
 	{
 		//.real() cuts off imaginary part (0 for symmetric case) but just to be aware for the general case
 		std::cout << "Eigenvalues: " << solver.eigenvalues().real().transpose() << std::endl;
+		std::cout << "Iterations: " << solver.num_iterations() << std::endl;
 	}
 	else
 	{
