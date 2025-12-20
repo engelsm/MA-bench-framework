@@ -3,6 +3,7 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Spectra/SymEigsSolver.h>
+#include <Spectra/GenEigsSolver.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
@@ -58,33 +59,55 @@ struct ManualParallelOp
 	}
 };
 
-int main(int argc, char **argv)
+template <typename SolverType>
+void run_solver(SolverType &solver)
 {
-	if (argc < 2)
-	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat>\n";
-		return 1;
-	}
-
-	CustomSparseMatrix A = load_binary_matrix(argv[1]);
-	ManualParallelOp op(A);
-
-	int eigen_vecs = 2;
-	int lanczos_vecs = 20;
-
-	Spectra::SymEigsSolver<ManualParallelOp> solver(op, eigen_vecs, lanczos_vecs);
 	solver.init();
-	// This is where all the work happens, i.e. continously calling our custom op.perform_op.
 	solver.compute();
-
 	if (solver.info() == Spectra::CompInfo::Successful)
 	{
-		Eigen::VectorXd evals = solver.eigenvalues();
-		std::cout << "Eigenvalues: " << evals.transpose() << std::endl;
+		//.real() cuts off imaginary part (0 for symmetric case) but just to be aware for the general case
+		std::cout << "Eigenvalues: " << solver.eigenvalues().real().transpose() << std::endl;
 	}
 	else
 	{
 		std::cerr << "Solver did not converge." << std::endl;
+	}
+}
+
+int main(int argc, char **argv)
+{
+	if (argc < 3)
+	{
+		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode: lanczos|arnoldi>\n";
+		return 1;
+	}
+
+	std::string filename = argv[1];
+	std::string mode = argv[2];
+
+	CustomSparseMatrix A = load_binary_matrix(filename);
+	ManualParallelOp op(A);
+
+	int n_eigs = 2;
+	int n_cv = 20;
+
+	if (mode == "lanczos")
+	{
+		std::cout << "Running Symmetric Solver (Lanczos)..." << std::endl;
+		Spectra::SymEigsSolver<ManualParallelOp> solver(op, n_eigs, n_cv);
+		run_solver(solver);
+	}
+	else if (mode == "arnoldi")
+	{
+		std::cout << "Running General Solver (Arnoldi)..." << std::endl;
+		Spectra::GenEigsSolver<ManualParallelOp> solver(op, n_eigs, n_cv);
+		run_solver(solver);
+	}
+	else
+	{
+		std::cerr << "Unknown mode: " << mode << ". Use 'lanczos' or 'arnoldi'." << std::endl;
+		return 1;
 	}
 
 	return 0;

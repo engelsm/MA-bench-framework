@@ -110,3 +110,5 @@ inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path)
 
     return A;
 }
+
+// Hier vielleicht eine isSymmetric Funktion einbauen
