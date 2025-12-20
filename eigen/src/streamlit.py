@@ -7,7 +7,7 @@ st.title("📊 Matrix Solver Performance Dashboard")
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv("/home/mengelsl/MA-bench-framework/eigen/outputs/perf_20251220_195139/perf_results.csv")
+    df = pd.read_csv("/home/mengelsl/MA-bench-framework/eigen/outputs/perf_20251220_202132/perf_results.csv")
     t1 = df[df['cores'] == 1].groupby(['matrix', 'algorithm'])['real_time_s'].mean().reset_index()
     t1 = t1.rename(columns={'real_time_s': 't1_time'})
     df = df.merge(t1, on=['matrix', 'algorithm'])

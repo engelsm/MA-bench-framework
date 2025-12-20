@@ -17,6 +17,8 @@ struct ManualParallelOp
 
 	const CustomSparseMatrix &m_mat;
 
+	mutable double total_spmv_time = 0;
+
 	ManualParallelOp(const CustomSparseMatrix &mat) : m_mat(mat) {}
 
 	// Spectra expects these two member functions for the operator
@@ -26,8 +28,9 @@ struct ManualParallelOp
 	// y_out = A * x_in
 	void perform_op(const Scalar *x_in, Scalar *y_out) const
 	{
-		// Spectra expects raw pointers for perform_op, thus we need to map them to Eigen types
+		double start = omp_get_wtime();
 
+		// Spectra passes raw memory pointers to perform_op, thus we need to map them to Eigen types
 		// x length is equal to given matrix cols (needed for element wise multiplication)
 		Eigen::Map<const CustomVector> x{x_in, m_mat.cols()};
 		// y length is equal to given matrix rows (result of multiplication)
@@ -58,19 +61,29 @@ struct ManualParallelOp
 			}
 			y(i) = sum;
 		}
+		total_spmv_time += (omp_get_wtime() - start);
 	}
 };
 
-template <typename SolverType>
-void run_solver(SolverType &solver)
+template <typename SolverType, typename OpType>
+void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs)
 {
+
+	double start_time = omp_get_wtime();
+
+	OpType op(A);
+	SolverType solver(op, n_eigvals, n_bvecs);
 	solver.init();
 	solver.compute();
+
+	double t_total = omp_get_wtime() - start_time;
+	double t_spmv = op.total_spmv_time;
+	double t_mgmt = t_total - t_spmv;
+
 	if (solver.info() == Spectra::CompInfo::Successful)
 	{
-		//.real() cuts off imaginary part (0 for symmetric case) but just to be aware for the general case
-		std::cout << "Eigenvalues: " << solver.eigenvalues().real().transpose() << std::endl;
-		std::cout << "Iterations: " << solver.num_iterations() << std::endl;
+		std::clog << "Eigenvalues found." << std::endl;
+		std::cout << "EXTRA_DATA," << t_spmv << "," << t_mgmt << "," << solver.num_operations() << std::endl;
 	}
 	else
 	{
@@ -80,32 +93,35 @@ void run_solver(SolverType &solver)
 
 int main(int argc, char **argv)
 {
-	if (argc < 3)
+	if (argc != 5)
 	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode: lanczos|arnoldi>\n";
+		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode: lanczos|arnoldi> [n_eigvals] [n_bvecs]\n";
 		return 1;
 	}
 
 	std::string filename = argv[1];
 	std::string mode = argv[2];
 
-	CustomSparseMatrix A = load_binary_matrix(filename);
-	ManualParallelOp op(A);
+	// Number of eigenvalues to compute
+	int n_eigvals = std::stoi(argv[3]);
+	// Number of basis vectors in the Krylov subspace (If too small, solver might not converge. If too large,
+	// performance might degrade due to higher computational cost. But as we are concerned with performance
+	// benchmarking only, this is not critical here.
+	int n_bvecs = std::stoi(argv[4]);
 
-	int n_eigs = 2;
-	int n_cv = 20;
+	CustomSparseMatrix A = load_binary_matrix(filename);
+
+	double start_time = omp_get_wtime();
 
 	if (mode == "lanczos")
 	{
-		std::cout << "Running Symmetric Solver (Lanczos)..." << std::endl;
-		Spectra::SymEigsSolver<ManualParallelOp> solver(op, n_eigs, n_cv);
-		run_solver(solver);
+		using Solver = Spectra::SymEigsSolver<ManualParallelOp>;
+		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs);
 	}
 	else if (mode == "arnoldi")
 	{
-		std::cout << "Running General Solver (Arnoldi)..." << std::endl;
-		Spectra::GenEigsSolver<ManualParallelOp> solver(op, n_eigs, n_cv);
-		run_solver(solver);
+		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
+		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs);
 	}
 	else
 	{
