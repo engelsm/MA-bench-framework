@@ -7,12 +7,13 @@
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
+#include <chrono>
 #include "util.h"
 
 // Look at https://spectralib.org/doc/sparsesymmatprod_8h_source
 struct ManualParallelOp
 {
-	// Spectra expects a type named Scalar so we redefine it
+	// Spectra expects a type named Scalar so we redefine it.
 	using Scalar = ::Scalar;
 
 	const CustomSparseMatrix &m_mat;
@@ -21,7 +22,7 @@ struct ManualParallelOp
 
 	ManualParallelOp(const CustomSparseMatrix &mat) : m_mat(mat) {}
 
-	// Spectra expects these two member functions for the operator
+	// Spectra expects these two member functions for the operator.
 	Eigen::Index rows() const { return m_mat.rows(); }
 	Eigen::Index cols() const { return m_mat.cols(); }
 
@@ -30,10 +31,10 @@ struct ManualParallelOp
 	{
 		double start = omp_get_wtime();
 
-		// Spectra passes raw memory pointers to perform_op, thus we need to map them to Eigen types
-		// x length is equal to given matrix cols (needed for element wise multiplication)
+		// Spectra passes raw memory pointers to perform_op, thus we need to map them to Eigen types.
+		// x length is equal to given matrix cols (needed for element wise multiplication).
 		Eigen::Map<const CustomVector> x{x_in, m_mat.cols()};
-		// y length is equal to given matrix rows (result of multiplication)
+		// y length is equal to given matrix rows (result of multiplication).
 		Eigen::Map<CustomVector> y{y_out, m_mat.rows()};
 
 		/**
@@ -41,13 +42,13 @@ struct ManualParallelOp
 		 * #pragma omp parallel for default(none) shared(x, y, m_mat) schedule(guided)
 		 * - default(none) & shared: Explicitly specify variable sharing to avoid accidental data races.
 		 * - schedule(guided): The rows of our sparse matrices will often times have
-		 *   varying amounts of non-zero elements. This directive helps to balance the workload
-		 *   among threads by dynamically assigning chunks of iterations depending on their size.
-		 *   (Threads that finish early can take on more work.)
+		 *   varying amounts of non-zero elements. This directive helps to balance the workload
+		 *   among threads by dynamically assigning chunks of iterations depending on their size.
+		 *   (Threads that finish early can take on more work.)
 		 */
 #pragma omp parallel for
 		// Look at https://libeigen.gitlab.io/eigen/docs-nightly/group__TutorialSparse.html
-		// Iterate over rows of the matrix as we use RowMajor storage (defined in util.h)
+		// Iterate over rows of the matrix as we use RowMajor storage (defined in util.h).
 		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
 		{
 			Scalar sum = 0;
@@ -66,28 +67,42 @@ struct ManualParallelOp
 };
 
 template <typename SolverType, typename OpType>
-void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs)
+void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const std::string &filename, const std::string &mode)
 {
-
-	double start_time = omp_get_wtime();
-
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
 	solver.init();
+
+	auto start_time = std::chrono::high_resolution_clock::now();
+
 	solver.compute();
 
-	double t_total = omp_get_wtime() - start_time;
+	auto end_time = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> elapsed = end_time - start_time;
+
+	double t_total = elapsed.count();
 	double t_spmv = op.total_spmv_time;
 	double t_mgmt = t_total - t_spmv;
+	int actual_ops = solver.num_operations();
+	double t_per_op = (actual_ops > 0) ? (t_spmv / actual_ops) : 0;
 
-	if (solver.info() == Spectra::CompInfo::Successful)
+	std::cout << "RESULT,"
+			  << filename << ","
+			  << mode << ","
+			  << omp_get_max_threads() << ","
+			  << t_total << ","
+			  << t_spmv << ","
+			  << t_mgmt << ","
+			  << solver.num_iterations() << ","
+			  << t_per_op << std::endl;
+
+	if (solver.info() != Spectra::CompInfo::Successful)
 	{
-		std::clog << "Eigenvalues found." << std::endl;
-		std::cout << "EXTRA_DATA," << t_spmv << "," << t_mgmt << "," << solver.num_operations() << std::endl;
+		std::clog << "Info: Solver stopped (Code: " << int(solver.info()) << ")" << std::endl;
 	}
 	else
 	{
-		std::cerr << "Solver did not converge." << std::endl;
+		std::cout << "EVs: " << solver.eigenvalues().transpose() << std::endl;
 	}
 }
 
@@ -95,37 +110,30 @@ int main(int argc, char **argv)
 {
 	if (argc != 5)
 	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode: lanczos|arnoldi> [n_eigvals] [n_bvecs]\n";
+		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode: lanczos|arnoldi> <n_eigvals> <n_bvecs>\n";
 		return 1;
 	}
 
 	std::string filename = argv[1];
 	std::string mode = argv[2];
-
-	// Number of eigenvalues to compute
 	int n_eigvals = std::stoi(argv[3]);
-	// Number of basis vectors in the Krylov subspace (If too small, solver might not converge. If too large,
-	// performance might degrade due to higher computational cost. But as we are concerned with performance
-	// benchmarking only, this is not critical here.
 	int n_bvecs = std::stoi(argv[4]);
 
 	CustomSparseMatrix A = load_binary_matrix(filename);
 
-	double start_time = omp_get_wtime();
-
 	if (mode == "lanczos")
 	{
 		using Solver = Spectra::SymEigsSolver<ManualParallelOp>;
-		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs);
+		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
 	}
 	else if (mode == "arnoldi")
 	{
 		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
-		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs);
+		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
 	}
 	else
 	{
-		std::cerr << "Unknown mode: " << mode << ". Use 'lanczos' or 'arnoldi'." << std::endl;
+		std::cerr << "Unknown mode: " << mode << std::endl;
 		return 1;
 	}
 
