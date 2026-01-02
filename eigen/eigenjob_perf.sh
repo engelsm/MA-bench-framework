@@ -1,10 +1,12 @@
 #!/bin/bash
-#SBATCH --cpus-per-task=16
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=48
+#SBATCH --distribution=block:block:block,Pack
 #SBATCH --job-name=Spectra_Perf
 
 ml load math/Eigen/3.4.0-GCCcore-13.3.0
 
-CORES=(1 2 4 8 16)
+CORES=(1 4 8 24 48)
 SAMPLE_RATE=3
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -16,10 +18,16 @@ MATRICES=("matrices/symmetric/binary/ct20stif.dat"
           "matrices/general/binary/ct20stif.dat")
 
 N_EIGVALS=2
-N_BVECS=100
+N_BVECS=20
 
-# Header erweitert um SpMV-Zeit, Management-Zeit und Anzahl der Operationen
-echo "cores,run,algorithm,matrix,real_time_s,user_time_s,sys_time_s,instructions,cycles,cache_misses,spmv_time_s,mgmt_time_s,num_ops" > "$CSV"
+echo "=== SLURM DIAGNOSE ==="
+echo "Job ID:          $SLURM_JOB_ID"
+echo "Kerne (Slurm):   $SLURM_CPUS_ON_NODE"
+echo "Affinity Mask:   $(taskset -cp $$)"
+lscpu | grep -E "Thread\(s\) per core|L3 cache"
+echo "======================"
+
+echo "n_cores,run,algorithm,matrix_path,perf_walltime_ns,perf_usertime_ns,perf_systime_ns,perf_instructions,perf_cycles,perf_cache_misses,intern_spmvtime_s,intern_mgmttime_s,intern_n_ops" > "$CSV"
 
 for M in "${MATRICES[@]}"; do
 # This is very specific to the current file & folder structure
@@ -33,7 +41,7 @@ for M in "${MATRICES[@]}"; do
     for C in "${CORES[@]}"; do
         echo "--- Cores: $C ---"
         export OMP_NUM_THREADS=$C
-
+        
         for R in $(seq 1 $SAMPLE_RATE); do
             echo "  Matrix: $M, Run: $R"
             
