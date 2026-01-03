@@ -110,24 +110,3 @@ inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path)
 
     return A;
 }
-
-// Perform a parallel sparse matrix-vector multiplication y = A * x using OpenMP.
-// This can be optimized further, but for the purpose of analysis it is sufficient.
-inline void spmv(const CustomSparseMatrix &A, const CustomVector &x, CustomVector &y)
-{
-    const StorageIndex *row_ptr = A.outerIndexPtr();
-    const StorageIndex *col_idx = A.innerIndexPtr();
-    const Scalar *values = A.valuePtr();
-    const int rows = A.rows();
-
-#pragma omp parallel for schedule(static)
-    for (int i = 0; i < rows; ++i)
-    {
-        Scalar sum = 0;
-        for (StorageIndex k = row_ptr[i]; k < row_ptr[i + 1]; ++k)
-        {
-            sum += values[k] * x(col_idx[k]);
-        }
-        y(i) = sum;
-    }
-}

@@ -4,6 +4,7 @@
 #include <Eigen/Sparse>
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/GenEigsSolver.h>
+#include <Spectra/DavidsonSymEigsSolver.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
@@ -129,6 +130,11 @@ int main(int argc, char **argv)
 	else if (mode == "arnoldi")
 	{
 		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
+		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
+	}
+	else if (mode == "davidson")
+	{
+		using Solver = Spectra::DavidsonSymEigsSolver<ManualParallelOp>;
 		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
 	}
 	else

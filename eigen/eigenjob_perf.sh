@@ -14,8 +14,8 @@ OUTDIR="outputs/perf_$TIMESTAMP"
 mkdir -p "$OUTDIR"
 CSV="$OUTDIR/perf_results.csv"
 
-MATRICES=("matrices/symmetric/binary/ct20stif.dat"
-          "matrices/general/binary/ct20stif.dat")
+MATRICES=("matrices/symmetric/binary/Hook_1498.dat"
+          "matrices/general/binary/Hook_1498.dat")
 
 N_EIGVALS=2
 N_BVECS=20

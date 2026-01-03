@@ -21,9 +21,8 @@ set(FMM_INCLUDE_DIR "/home/mengelsl/libs/fast_matrix_market/include")
 
 set(PROGRAMS 
     preprocess_matrix
-    spectra_omp
+    solve
     spatial_regularity
-    main
 )
 
 foreach(PROG ${PROGRAMS})
