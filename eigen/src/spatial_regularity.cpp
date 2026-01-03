@@ -4,7 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <numeric>
-#include "util.h"
+#include "util.hpp"
 
 struct RegularityMetrics
 {
@@ -15,9 +15,13 @@ struct RegularityMetrics
 
 /**
  * Analyzes the structural regularity of a sparse matrix in CSR format.
+ * (This is not to be confused with numerical regularity.)
  * Focuses on the column index jumps which determine the cache efficiency
  * of the vector x during SpMV (y = Ax). A is stored consecutively in memory,
  * but the access pattern to x depends on the column indices of A.
+ * Even though consecutive values might trigger additional cache loads, they are not
+ * counted as stress-inducing jumps, because the hardware prefetcher can
+ * handle them efficiently.
  */
 RegularityMetrics compute_regularity(const CustomSparseMatrix &A, int elements_per_cache_line = 8)
 {

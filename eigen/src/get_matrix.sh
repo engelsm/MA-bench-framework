@@ -7,7 +7,7 @@ NAME=${1#*/}
 
 # 1. Download & Extract .mtx
 URL="https://suitesparse-collection-website.herokuapp.com/MM/${GROUP}/${NAME}.tar.gz"
-wget -qO- "$URL" | tar -xzO --wildcards "*/*.mtx" > "${NAME}.mtx"
+wget -O- "$URL" | tar -xzvO --wildcards "*/*.mtx" > "${NAME}.mtx"
 
 # 2. Get symmetry type
 TYPE="general"
@@ -22,7 +22,7 @@ mkdir -p "$MTX_DIR" "$BIN_DIR"
 mv "${NAME}.mtx" "$MTX_DIR/"
 
 # 5. Run Preprocessor
-../build/preprocess_matrix "$MTX_DIR/${NAME}.mtx" "$BIN_DIR/${NAME}.bin"
+../build/preprocess_matrix "$MTX_DIR/${NAME}.mtx" "$BIN_DIR/${NAME}.dat"
 
 echo "MTX: $MTX_DIR/${NAME}.mtx"
-echo "BIN: $BIN_DIR/${NAME}.bin"
+echo "BIN: $BIN_DIR/${NAME}.dat"

@@ -8,7 +8,7 @@
 #include <iostream>
 #include <string>
 #include <chrono>
-#include "util.h"
+#include "util.hpp"
 
 // Look at https://spectralib.org/doc/sparsesymmatprod_8h_source
 struct ManualParallelOp
