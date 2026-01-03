@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <vector>
 #include <cmath>
+#include <numeric>
 #include "util.h"
 
 struct RegularityMetrics
 {
 	double median_jump;
+	double avg_jump;
 	double stress_rate;
 };
 
@@ -49,8 +51,9 @@ RegularityMetrics compute_regularity(const CustomSparseMatrix &A, int elements_p
 		}
 	}
 
-	// Compute median of all jumps.
+	// Compute median and average of all jumps.
 	double median = 0;
+	double avg = 0;
 	if (!all_jumps.empty())
 	{
 		std::sort(all_jumps.begin(), all_jumps.end());
@@ -59,12 +62,13 @@ RegularityMetrics compute_regularity(const CustomSparseMatrix &A, int elements_p
 			median = (all_jumps[size / 2 - 1] + all_jumps[size / 2]) / 2.0;
 		else
 			median = all_jumps[size / 2];
+		avg = std::accumulate(all_jumps.begin(), all_jumps.end(), 0.0) / size;
 	}
 
 	// Stress rate: percentage of jumps that likely cause cache misses.
 	double stress_rate = (total_jumps > 0) ? (static_cast<double>(stress_count) / total_jumps * 100.0) : 0.0;
 
-	return {median, stress_rate};
+	return {median, avg, stress_rate};
 }
 
 int main(int argc, char *argv[])
@@ -85,9 +89,10 @@ int main(int argc, char *argv[])
 
 	std::cout << "FILE: " << filename << std::endl;
 	std::cout << "DIM:  " << A.rows() << "x" << A.cols() << " (NNZ: " << A.nonZeros() << ")" << std::endl;
-	std::cout << "THRES: " << cache_threshold << " elements" << std::endl;
-	std::cout << "REG:  MedianJump=" << reg.median_jump
-			  << ", SME-Stress-Rate=" << std::fixed << std::setprecision(2) << reg.stress_rate << "%" << std::endl;
+	std::cout << "REG:  " << std::fixed << std::setprecision(2)
+			  << "Median Jump=" << reg.median_jump
+			  << ", Average Jump=" << reg.avg_jump
+			  << ", Stress-Rate=" << reg.stress_rate << "%" << std::endl;
 
 	return 0;
 }
