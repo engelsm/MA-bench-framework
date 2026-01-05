@@ -24,5 +24,8 @@ mv "${NAME}.mtx" "$MTX_DIR/"
 # 5. Run Preprocessor
 ../build/preprocess_matrix "$MTX_DIR/${NAME}.mtx" "$BIN_DIR/${NAME}.dat"
 
+# 6. Run Spatial Regularity Analysis
+../build/spatial_regularity "$BIN_DIR/${NAME}.dat"
+
 echo "MTX: $MTX_DIR/${NAME}.mtx"
 echo "BIN: $BIN_DIR/${NAME}.dat"

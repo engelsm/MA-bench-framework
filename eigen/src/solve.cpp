@@ -4,7 +4,6 @@
 #include <Eigen/Sparse>
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/GenEigsSolver.h>
-#include <Spectra/DavidsonSymEigsSolver.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
@@ -63,7 +62,8 @@ struct ManualParallelOp
 			}
 			y(i) = sum;
 		}
-		total_spmv_time += (omp_get_wtime() - start);
+		double duration = omp_get_wtime() - start;
+		total_spmv_time += duration;
 	}
 };
 
@@ -85,17 +85,11 @@ void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const s
 	double t_spmv = op.total_spmv_time;
 	double t_mgmt = t_total - t_spmv;
 	int actual_ops = solver.num_operations();
-	double t_per_op = (actual_ops > 0) ? (t_spmv / actual_ops) : 0;
 
-	std::cout << "RESULT,"
-			  << filename << ","
-			  << mode << ","
-			  << omp_get_max_threads() << ","
-			  << t_total << ","
+	std::cout << "EXTRA_DATA,"
 			  << t_spmv << ","
 			  << t_mgmt << ","
-			  << solver.num_iterations() << ","
-			  << t_per_op << std::endl;
+			  << solver.num_iterations() << std::endl;
 
 	if (solver.info() != Spectra::CompInfo::Successful)
 	{
@@ -130,11 +124,6 @@ int main(int argc, char **argv)
 	else if (mode == "arnoldi")
 	{
 		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
-		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
-	}
-	else if (mode == "davidson")
-	{
-		using Solver = Spectra::DavidsonSymEigsSolver<ManualParallelOp>;
 		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
 	}
 	else

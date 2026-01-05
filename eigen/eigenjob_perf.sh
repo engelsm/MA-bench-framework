@@ -17,8 +17,8 @@ CSV="$OUTDIR/perf_results.csv"
 MATRICES=("matrices/symmetric/binary/Hook_1498.dat"
           "matrices/general/binary/Hook_1498.dat")
 
-N_EIGVALS=2
-N_BVECS=20
+N_EIGVALS=5
+N_BVECS=11
 
 echo "=== SLURM DIAGNOSE ==="
 echo "Job ID:          $SLURM_JOB_ID"
@@ -48,17 +48,17 @@ for M in "${MATRICES[@]}"; do
             TMP_OUT="$OUTDIR/tmp_stdout.txt"
 
              # Extract the value thats before the metric name, as perf stat -x ',' outputs CSV lines with this structure
-            PERF_RAW=$( { perf stat -x ',' \
-                -e duration_time,user_time,system_time,instructions,cycles,cache-misses \
-                ./build/spectra_omp "$M" "$ALGO" "$N_EIGVALS" "$N_BVECS" \
+        PERF_RAW=$( { perf stat -x ',' \
+            -e duration_time,user_time,system_time,instructions,cycles,cache-misses \
+            ./build/solve "$M" "$ALGO" "$N_EIGVALS" "$N_BVECS" \
                 1> "$TMP_OUT"; } 2>&1 )
-
-            REAL=$(echo "$PERF_RAW" | awk -F',' '$3=="duration_time" {print $1}')
-            USER=$(echo "$PERF_RAW" | awk -F',' '$3=="user_time" {print $1}')
-            SYS=$(echo "$PERF_RAW" | awk -F',' '$3=="system_time" {print $1}')
-            INST=$(echo "$PERF_RAW" | awk -F',' '$3=="instructions" {print $1}')
-            CYCL=$(echo "$PERF_RAW" | awk -F',' '$3=="cycles" {print $1}')
-            MISS=$(echo "$PERF_RAW" | awk -F',' '$3=="cache-misses" {print $1}')
+            echo $TMP_OUT
+            REAL=$(echo "$PERF_RAW" | awk -F',' '/duration_time/ {print $1}')
+            USER=$(echo "$PERF_RAW" | awk -F',' '/user_time/ {print $1}')
+            SYS=$(echo "$PERF_RAW" | awk -F',' '/system_time/ {print $1}')
+            INST=$(echo "$PERF_RAW" | awk -F',' '/instructions/ {print $1}')
+            CYCL=$(echo "$PERF_RAW" | awk -F',' '/cycles/ {print $1}')
+            MISS=$(echo "$PERF_RAW" | awk -F',' '/cache-misses/ {print $1}')
 
             EXTRA_LINE=$(grep "EXTRA_DATA" "$TMP_OUT")
             SPMV_T=$(echo "$EXTRA_LINE" | cut -d',' -f2)
