@@ -1,6 +1,13 @@
 #include "util.hpp"
 #include <iostream>
 #include <string>
+#include <iomanip>
+
+/**
+ * Matrix Preprocessing Tool
+ * This tool converts Matrix Market (.mtx) files into a custom
+ * binary CSR format and writes matrix metadata to a CSV file.
+ */
 
 int main(int argc, char *argv[])
 {
@@ -12,20 +19,20 @@ int main(int argc, char *argv[])
 
 	std::string input_mtx = argv[1];
 	std::string output_bin = argv[2];
+	const std::string metadata_csv = "matrices/matrix_metadata.csv";
+	MtxFlags mtx_flags = get_mtx_flags(input_mtx);
 
-	std::cout << "Starting conversion..." << std::endl;
+	CustomSparseMatrix A;
+	write_binary_matrix(input_mtx, output_bin, A);
 
-	int status = write_binary_matrix(input_mtx, output_bin);
+	double reg = compute_regularity(A, 8);
 
-	if (status == 0)
-	{
-		std::cout << "Conversion finished successfully." << std::endl;
-	}
-	else
-	{
-		std::cerr << "Conversion failed!" << std::endl;
-		return 1;
-	}
-
+	save_matrix_metadata(metadata_csv,
+						 output_bin,
+						 mtx_flags,
+						 A.rows(),
+						 A.cols(),
+						 A.nonZeros(),
+						 reg);
 	return 0;
 }
