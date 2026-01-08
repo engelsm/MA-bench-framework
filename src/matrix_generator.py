@@ -3,6 +3,8 @@ import argparse
 import struct
 import os
 
+# TODO: genauer gucken wie typische Matrizen in realen Anwendungen aussehen
+
 
 def generate_matrices(N, outdir):
     bw = 20
@@ -42,14 +44,12 @@ def generate_matrices(N, outdir):
 
         with open(filename, "wb") as f:
             # HEADER: rows(int32), cols(int32), nnz(int32) -> "iii"
-            # Matches C++ StorageIndex (int) and avoids 8-byte padding issues
             f.write(struct.pack("iii", N, N, target_nnz))
 
-            # 1. Write OuterIndexPtr (indptr) - N+1 elements
+            # Write OuterIndexPtr (indptr) - N+1 elements
             f.write(indptr.astype(np.int32).tobytes())
 
-            # 2. Generate and write InnerIndexPtr (indices) - nnz elements
-            # Indices are generated row by row to keep memory footprint low
+            # Generate and write InnerIndexPtr (indices) - nnz elements
             all_indices = []
             for i in range(N):
                 if mode == "low":
@@ -63,7 +63,7 @@ def generate_matrices(N, outdir):
                         # Fully random distribution (Stress for L3/DRAM)
                         cols = np.random.randint(0, N, size=count, dtype=np.int32)
                     else:  # med
-                        # 90% Cluster probability to simulate community structure
+                        # 90% Cluster probability
                         mask = np.random.rand(count) < 0.90
                         cluster_start = (i // cluster_size) * cluster_size
                         glob = np.random.randint(0, N, size=count)
@@ -79,7 +79,7 @@ def generate_matrices(N, outdir):
                 # Temporarily store indices for the second pass (Value generation)
                 all_indices.append(cols)
 
-            # 3. Generate and write ValuePtr (values) - nnz elements
+            # Generate and write ValuePtr (values) - nnz elements
             for i in range(N):
                 cols = all_indices[i]
                 vals = get_sym_values(i, cols)
@@ -89,9 +89,7 @@ def generate_matrices(N, outdir):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate symmetric CSR matrices for SME benchmarking."
-    )
+    parser = argparse.ArgumentParser(description="Generate symmetric CSR matrices.")
     parser.add_argument("-n", type=int, required=True, help="Matrix dimension N")
     parser.add_argument(
         "--outdir", type=str, required=True, help="Output directory for binary files"

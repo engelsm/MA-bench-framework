@@ -75,12 +75,10 @@ void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const s
 	solver.init();
 
 	auto start_time = std::chrono::high_resolution_clock::now();
-
 	solver.compute();
-
 	auto end_time = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> elapsed = end_time - start_time;
 
+	std::chrono::duration<double> elapsed = end_time - start_time;
 	double t_total = elapsed.count();
 	double t_spmv = op.total_spmv_time;
 	double t_mgmt = t_total - t_spmv;

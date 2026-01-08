@@ -16,13 +16,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// Load matrix and setup vectors
 	CustomSparseMatrix m_mat = load_binary_matrix(argv[1]);
 	int iterations = std::stoi(argv[2]);
 	CustomVector x = CustomVector::Random(m_mat.cols());
 	CustomVector y = CustomVector::Zero(m_mat.rows());
 
-	// Measurement Phase
 	auto start = std::chrono::high_resolution_clock::now();
 
 	for (int iter = 0; iter < iterations; ++iter)
@@ -42,8 +40,6 @@ int main(int argc, char **argv)
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = end - start;
 
-	// Output only the essentials for easy parsing
-	// Format: matrix, total_time, time_per_spmv, gflops
 	double gflops = (2.0 * m_mat.nonZeros() * iterations) / (elapsed.count() * 1e9);
 
 	std::cout << "EXTRA_DATA,"

@@ -20,9 +20,10 @@ set(SPECTRA_INCLUDE_DIR "/home/mengelsl/libs/spectra/include")
 set(FMM_INCLUDE_DIR "/home/mengelsl/libs/fast_matrix_market/include")
 
 set(PROGRAMS 
-    preprocess_matrix
+    #preprocess_matrix
     solve
     spatial_regularity
+    spmv
 )
 
 foreach(PROG ${PROGRAMS})
