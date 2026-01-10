@@ -67,8 +67,27 @@ struct ManualParallelOp
 	}
 };
 
+template <typename SolverType>
+void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
+{
+	CustomVector b = CustomVector::Ones(A.rows());
+	CustomVector x;
+
+	SolverType solver;
+	solver.setMaxIterations(max_iter);
+	solver.setTolerance(1e-10);
+
+	auto start = std::chrono::high_resolution_clock::now();
+	solver.compute(A);
+	x = solver.solve(b);
+	auto end = std::chrono::high_resolution_clock::now();
+
+	std::chrono::duration<double> elapsed = end - start;
+	std::cout << "EXTRA_DATA,0," << elapsed.count() << "," << solver.iterations() << std::endl;
+}
+
 template <typename SolverType, typename OpType>
-void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const std::string &filename, const std::string &mode)
+void run_eigen_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const std::string &filename, const std::string &mode)
 {
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
@@ -101,31 +120,39 @@ void run_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const s
 
 int main(int argc, char **argv)
 {
-	if (argc != 5)
+	if (argc < 3)
 	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode: lanczos|arnoldi> <n_eigvals> <n_bvecs>\n";
+		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode> [iter/eigvals]\n";
 		return 1;
 	}
 
 	std::string filename = argv[1];
 	std::string mode = argv[2];
-	int n_eigvals = std::stoi(argv[3]);
-	int n_bvecs = std::stoi(argv[4]);
+	int p1 = (argc > 3) ? std::stoi(argv[3]) : 100;
 
 	// Set fixed seed for reproducibility
 	std::srand(42);
-
 	CustomSparseMatrix A = load_binary_matrix(filename);
 
-	if (mode == "lanczos")
+	if (mode == "cg")
+	{
+		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
+		run_linear_solver<Solver>(A, p1);
+	}
+	else if (mode == "bicgstab")
+	{
+		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
+		run_linear_solver<Solver>(A, p1);
+	}
+	else if (mode == "lanczos")
 	{
 		using Solver = Spectra::SymEigsSolver<ManualParallelOp>;
-		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
+		run_eigen_solver<Solver, ManualParallelOp>(A, p1, p1 * 2 + 1, filename, mode);
 	}
 	else if (mode == "arnoldi")
 	{
 		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
-		run_solver<Solver, ManualParallelOp>(A, n_eigvals, n_bvecs, filename, mode);
+		run_eigen_solver<Solver, ManualParallelOp>(A, p1, p1 * 2 + 1, filename, mode);
 	}
 	else
 	{
