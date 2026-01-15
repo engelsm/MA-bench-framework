@@ -49,26 +49,27 @@ for M in "${MATRICES[@]}"; do
         # Determine which NUMA configurations to run for this core count
         CONFIGS=()
         if [ $C -le 24 ]; then
-            CONFIGS=("OPTIMIZED") # For <= 24, Optimized is just local membind
+            CONFIGS=("NUMA_LOCAL") # For <= 24, Optimized is just local membind
         else
-            CONFIGS=("OPTIMIZED" "STRESS") # For > 24, test Interleaved vs. Forced Node 0
+            CONFIGS=("NUMA_LOCAL" "NUMA_REMOTE") # For > 24, test Interleaved vs. Forced Node 0
         fi
 
         for CFG in "${CONFIGS[@]}"; do
             
             # Set the numactl strategy based on core count and config type
-            if [ "$CFG" == "OPTIMIZED" ]; then
+            if [ "$CFG" == "NUMA_LOCAL" ]; then
                 if [ $C -le 24 ]; then
                     NUMA_CMD="numactl --cpunodebind=0 --membind=0"
                 else
-                    NUMA_CMD="numactl --interleave=0,1"
+                    NUMA_CMD="numactl --cpunodebind=0,1 --interleave=0,1"
                 fi
-            elif [ "$CFG" == "STRESS" ]; then
+            elif [ "$CFG" == "NUMA_REMOTE" ]; then
                 # Threads on 0 & 1, but ALL memory forced to Node 0
                 NUMA_CMD="numactl --cpunodebind=0,1 --membind=0"
             fi
 
-            echo "  Cores: $C | Config: $CFG | Cmd: $NUMA_CMD"
+            NUMA_STATUS=$($NUMA_CMD numactl --show | grep -E "policy|nodebind" | xargs echo)
+            echo "Cores: $C | Config: $CFG | Cmd: $NUMA_CMD | Real: $NUMA_STATUS"
 
             for R in $(seq 1 $SAMPLE_RATE); do
                 TMP_OUT="$OUTDIR/tmp_stdout.txt"

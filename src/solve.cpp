@@ -9,6 +9,13 @@
 #include <string>
 #include <chrono>
 #include "util.hpp"
+#include <iomanip>
+
+// Scheinbar beeinflusst die Größe der Matrix das SPMV/MGMT Verhältnis.
+
+//$Ops = n_bvecs*2 - n_eigvals + 1 ?
+// const int TARGET_SPMV_OPS = 41;
+// const int EIGEN_VALS_TO_COMPUTE = 20;
 
 // Look at https://spectralib.org/doc/sparsesymmatprod_8h_source
 struct ManualParallelOp
@@ -62,7 +69,8 @@ struct ManualParallelOp
 			}
 			y(i) = sum;
 		}
-		double duration = omp_get_wtime() - start;
+		double end = omp_get_wtime();
+		double duration = end - start;
 		total_spmv_time += duration;
 	}
 };
@@ -75,7 +83,7 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 
 	SolverType solver;
 	solver.setMaxIterations(max_iter);
-	solver.setTolerance(1e-10);
+	solver.setTolerance(0);
 
 	auto start = std::chrono::high_resolution_clock::now();
 	solver.compute(A);
@@ -86,27 +94,29 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 	std::cout << "EXTRA_DATA,0," << elapsed.count() << "," << solver.iterations() << std::endl;
 }
 
+// Eigen runs this internally multithreaded : https://libeigen.gitlab.io/eigen/docs-nightly/TopicMultiThreading.htm
 template <typename SolverType, typename OpType>
-void run_eigen_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs, const std::string &filename, const std::string &mode)
+void run_eigen_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs)
 {
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
 	solver.init();
 
 	auto start_time = std::chrono::high_resolution_clock::now();
-	solver.compute();
+	// Wir erzwingen 1 Restart mit n_bvecs, um exakt TARGET_SPMV_OPS zu erreichen
+	solver.compute(Spectra::SortRule::LargestMagn, 1, 0.0);
 	auto end_time = std::chrono::high_resolution_clock::now();
 
 	std::chrono::duration<double> elapsed = end_time - start_time;
 	double t_total = elapsed.count();
+	// The spmv_time is the wall time over all threads, this means it will usually go down with more threads
 	double t_spmv = op.total_spmv_time;
 	double t_mgmt = t_total - t_spmv;
-	int actual_ops = solver.num_operations();
 
 	std::cout << "EXTRA_DATA,"
 			  << t_spmv << ","
 			  << t_mgmt << ","
-			  << solver.num_iterations() << std::endl;
+			  << solver.num_operations() << std::endl;
 
 	if (solver.info() != Spectra::CompInfo::Successful)
 	{
@@ -122,14 +132,15 @@ int main(int argc, char **argv)
 {
 	if (argc < 3)
 	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode> [iter/eigvals]\n";
+		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode> <iter>\n";
 		return 1;
 	}
 
 	std::string filename = argv[1];
 	std::string mode = argv[2];
-	int p1 = (argc > 3) ? std::stoi(argv[3]) : 100;
-
+	int TARGET_SPMV_OPS = (argc >= 4) ? std::stoi(argv[3]) : 1000;
+	// AS LONG AS THIS IS SUFFICIENTLY SMALL (~< TARGET_SPMV_OPS / 2) WE ARE GOOD
+	int EIGEN_VALS_TO_COMPUTE = (argc >= 5) ? std::stoi(argv[4]) : 20;
 	// Set fixed seed for reproducibility
 	std::srand(42);
 	CustomSparseMatrix A = load_binary_matrix(filename);
@@ -137,22 +148,23 @@ int main(int argc, char **argv)
 	if (mode == "cg")
 	{
 		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
-		run_linear_solver<Solver>(A, p1);
+		run_linear_solver<Solver>(A, TARGET_SPMV_OPS);
 	}
 	else if (mode == "bicgstab")
 	{
 		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
-		run_linear_solver<Solver>(A, p1);
+		// does 2 spmv per iteration
+		run_linear_solver<Solver>(A, TARGET_SPMV_OPS / 2);
 	}
 	else if (mode == "lanczos")
 	{
 		using Solver = Spectra::SymEigsSolver<ManualParallelOp>;
-		run_eigen_solver<Solver, ManualParallelOp>(A, p1, p1 * 2 + 1, filename, mode);
+		run_eigen_solver<Solver, ManualParallelOp>(A, EIGEN_VALS_TO_COMPUTE, TARGET_SPMV_OPS);
 	}
 	else if (mode == "arnoldi")
 	{
 		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
-		run_eigen_solver<Solver, ManualParallelOp>(A, p1, p1 * 2 + 1, filename, mode);
+		run_eigen_solver<Solver, ManualParallelOp>(A, EIGEN_VALS_TO_COMPUTE, TARGET_SPMV_OPS);
 	}
 	else
 	{

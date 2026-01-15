@@ -1,69 +1,87 @@
 #!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=48
-#SBATCH --distribution=block:block:block,Pack
-#SBATCH --job-name=Spectra_Perf
+#SBATCH --job-name=solve_bench
+#SBATCH --time=04:00:00
+#SBATCH --exclusive
 
+ml purge
 ml load math/Eigen/3.4.0-GCCcore-13.3.0
 
+echo "Cores (Slurm):    $SLURM_CPUS_ON_NODE"
+lscpu | grep -E "node[0-1] CPU"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTDIR="outputs/perf_$TIMESTAMP"
+OUTDIR="outputs/bench_$TIMESTAMP"
 mkdir -p "$OUTDIR"
-CSV="$OUTDIR/perf_results.csv"
+CSV="$OUTDIR/results_complete.csv"
 
+export OMP_PLACES="{0:24},{24:24}"
 export OMP_PROC_BIND=close
-export OMP_PLACES=cores
 
-CORES=(1 8 24 48)
-SAMPLE_RATE=5
-N_EIGVALS=10
-N_BVECS=21
+CORES=(1 4 8 16 24 36 48)
+SAMPLE_RATE=3
+ITERATIONS=100      
+SIZES=(20000 200000 2000000)
+BASE_MAT_DIR="matrices/cgen"
 
-declare -A MATRICES
-MATRICES["matrices/binary/Bump2911.bin"]="lanczos"
+echo "n_cores,run,numa_config,algorithm,matrix_name,matrix_size,perf_walltime_ns,perf_cache_misses,perf_instructions,perf_cycles,intern_spmvtime_s,intern_mgmttime_s,intern_n_ops" > "$CSV"
 
-echo "=== SLURM DIAGNOSE ==="
-echo "Job ID:          $SLURM_JOB_ID"
-echo "Kerne (Slurm):   $SLURM_CPUS_ON_NODE"
-echo "Affinity Mask:   $(taskset -cp $$)"
-lscpu | grep -E "Thread\(s\) per core|L3 cache"
-echo "======================"
+for N in "${SIZES[@]}"; do
+    MAT_DIR="$BASE_MAT_DIR/size_$N"
+    
+    declare -A WORKLOAD
+    WORKLOAD["$MAT_DIR/001_perfect_band.bin"]="cg lanczos bicgstab arnoldi"
+    WORKLOAD["$MAT_DIR/002_sym_clusters.bin"]="cg lanczos bicgstab arnoldi"
+    WORKLOAD["$MAT_DIR/003_asym_clusters.bin"]="bicgstab arnoldi"
+    WORKLOAD["$MAT_DIR/004_sym_random.bin"]="cg lanczos bicgstab arnoldi"
+    WORKLOAD["$MAT_DIR/005_asym_random.bin"]="bicgstab arnoldi"
 
-echo "n_cores,run,algorithm,matrix_path,n_eigvals,n_bvecs,perf_walltime_ns,perf_usertime_ns,perf_systime_ns,perf_instructions,perf_cycles,perf_cache_misses,intern_spmvtime_s,intern_mgmttime_s,intern_n_ops" > "$CSV"
+    for M in "${!WORKLOAD[@]}"; do
+        ALGOS=${WORKLOAD[$M]}
+        M_NAME=$(basename "$M")
 
-for M in "${!MATRICES[@]}"; do
-    ALGO=${MATRICES[$M]}
-    echo "=== Matrix: $M (ALGO: $ALGO)==="
+        for ALGO in $ALGOS; do
+            for C in "${CORES[@]}"; do
+                export OMP_NUM_THREADS=$C
+                
+                # NUMA Strategies
+                CONFIGS=("NUMA_LOCAL")
+                if [ $C -gt 24 ]; then CONFIGS=("NUMA_LOCAL" "NUMA_REMOTE"); fi
 
-    for C in "${CORES[@]}"; do
-        echo "--- Cores: $C ---"
-        export OMP_NUM_THREADS=$C
-        
-        for R in $(seq 1 $SAMPLE_RATE); do
-            echo "  Matrix: $M, Run: $R"
-            
-            TMP_OUT="$OUTDIR/tmp_stdout.txt"
+                for CFG in "${CONFIGS[@]}"; do
+                    if [ "$CFG" == "NUMA_LOCAL" ]; then
+                        if [ $C -le 24 ]; then NUMA_CMD="numactl --cpunodebind=0 --membind=0"
+                        else NUMA_CMD="numactl --cpunodebind=0,1 --interleave=0,1"; fi
+                    elif [ "$CFG" == "NUMA_REMOTE" ]; then
+                        NUMA_CMD="numactl --cpunodebind=0,1 --membind=0"
+                    fi
 
-             # Extract the value thats before the metric name, as perf stat -x ',' outputs CSV lines with this structure
-            PERF_RAW=$( { perf stat -x ',' \
-            -e duration_time,user_time,system_time,instructions,cycles,cache-misses \
-            ./build/solve "$M" "$ALGO" "$N_EIGVALS" "$N_BVECS" \
-                1> "$TMP_OUT"; } 2>&1 )
-            REAL=$(echo "$PERF_RAW" | awk -F',' '/duration_time/ {print $1}')
-            USER=$(echo "$PERF_RAW" | awk -F',' '/user_time/ {print $1}')
-            SYS=$(echo "$PERF_RAW" | awk -F',' '/system_time/ {print $1}')
-            INST=$(echo "$PERF_RAW" | awk -F',' '/instructions/ {print $1}')
-            CYCL=$(echo "$PERF_RAW" | awk -F',' '/cycles/ {print $1}')
-            MISS=$(echo "$PERF_RAW" | awk -F',' '/cache-misses/ {print $1}')
+                    for R in $(seq 1 $SAMPLE_RATE); do
+                        echo "Size: $N | $M_NAME | $ALGO | Cores: $C | $CFG | Run: $R"
 
-            EXTRA_LINE=$(grep "EXTRA_DATA" "$TMP_OUT")
-            SPMV_T=$(echo "$EXTRA_LINE" | cut -d',' -f2)
-            MGMT_T=$(echo "$EXTRA_LINE" | cut -d',' -f3)
-            NUM_OPS=$(echo "$EXTRA_LINE" | cut -d',' -f4)
+                        TMP_OUT="$OUTDIR/tmp_stdout.txt"
+                        PERF_OUT=$( { perf stat -x ',' \
+                                -e duration_time,instructions,cycles,cache-misses \
+                                $NUMA_CMD ./build/solve "$M" "$ALGO" "$ITERATIONS" \
+                                1> "$TMP_OUT"; } 2>&1 )
 
-            echo "$C,$R,$ALGO,$M,$N_EIGVALS,$N_BVECS,$REAL,$USER,$SYS,$INST,$CYCL,$MISS,$SPMV_T,$MGMT_T,$NUM_OPS" >> "$CSV"
-            
-            rm "$TMP_OUT"
+                        REAL=$(echo "$PERF_OUT" | awk -F',' '/duration_time/ {print $1}')
+                        INST=$(echo "$PERF_OUT" | awk -F',' '/instructions/ {print $1}')
+                        CYCL=$(echo "$PERF_OUT" | awk -F',' '/cycles/ {print $1}')
+                        MISS=$(echo "$PERF_OUT" | awk -F',' '/cache-misses/ {print $1}')
+
+                        EXTRA_LINE=$(grep "EXTRA_DATA" "$TMP_OUT")
+                        SPMV_T=$(echo "$EXTRA_LINE" | cut -d',' -f2)
+                        MGMT_T=$(echo "$EXTRA_LINE" | cut -d',' -f3)
+                        NUM_OPS=$(echo "$EXTRA_LINE" | cut -d',' -f4)
+
+                        echo "$C,$R,$CFG,$ALGO,$M_NAME,$N,$REAL,$MISS,$INST,$CYCL,$SPMV_T,$MGMT_T,$NUM_OPS" >> "$CSV"
+                        rm -f "$TMP_OUT"
+                    done
+                done
+            done
         done
     done
+    unset WORKLOAD
 done
