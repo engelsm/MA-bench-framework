@@ -11,32 +11,22 @@
 #include "util.hpp"
 #include <iomanip>
 
-// Scheinbar beeinflusst die Größe der Matrix das SPMV/MGMT Verhältnis.
-
-//$Ops = n_bvecs*2 - n_eigvals + 1 ?
-// const int TARGET_SPMV_OPS = 41;
-// const int EIGEN_VALS_TO_COMPUTE = 20;
-
-// Look at https://spectralib.org/doc/sparsesymmatprod_8h_source
-struct ManualParallelOp
+struct ManualOp
 {
-	// Spectra expects a type named Scalar so we redefine it.
+	// Spectra expects the following structure for the operator struct. See https://spectralib.org/doc/sparsesymmatprod_8h_source as an example.
 	using Scalar = ::Scalar;
 
 	const CustomSparseMatrix &m_mat;
 
-	mutable double total_spmv_time = 0;
+	ManualOp(const CustomSparseMatrix &mat) : m_mat(mat) {}
 
-	ManualParallelOp(const CustomSparseMatrix &mat) : m_mat(mat) {}
-
-	// Spectra expects these two member functions for the operator.
 	Eigen::Index rows() const { return m_mat.rows(); }
 	Eigen::Index cols() const { return m_mat.cols(); }
 
-	// y_out = A * x_in
+	mutable double eigensolver_spmv_time = 0;
+
 	void perform_op(const Scalar *x_in, Scalar *y_out) const
 	{
-		double start = omp_get_wtime();
 
 		// Spectra passes raw memory pointers to perform_op, thus we need to map them to Eigen types.
 		// x length is equal to given matrix cols (needed for element wise multiplication).
@@ -44,36 +34,21 @@ struct ManualParallelOp
 		// y length is equal to given matrix rows (result of multiplication).
 		Eigen::Map<CustomVector> y{y_out, m_mat.rows()};
 
-		/**
-		 * For large matrices this might be more efficient:
-		 * #pragma omp parallel for default(none) shared(x, y, m_mat) schedule(guided)
-		 * - default(none) & shared: Explicitly specify variable sharing to avoid accidental data races.
-		 * - schedule(guided): The rows of our sparse matrices will often times have
-		 *   varying amounts of non-zero elements. This directive helps to balance the workload
-		 *   among threads by dynamically assigning chunks of iterations depending on their size.
-		 *   (Threads that finish early can take on more work.)
-		 */
-#pragma omp parallel for
-		// Look at https://libeigen.gitlab.io/eigen/docs-nightly/group__TutorialSparse.html
-		// Iterate over rows of the matrix as we use RowMajor storage (defined in util.h).
-		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
-		{
-			Scalar sum = 0;
-			// While non-zero values are stored sequentially in memory for the custom CSR binary format
-			// (and most other sparse matrix formats), we need the InnerIterator to retrieve the associated
-			// column index (it.col()) for each value. This allows us to map the matrix element to the correct
-			// entry in vector x.
-			for (typename CustomSparseMatrix::InnerIterator it(m_mat, i); it; ++it)
-			{
-				sum += it.value() * x(it.col());
-			}
-			y(i) = sum;
-		}
-		double end = omp_get_wtime();
-		double duration = end - start;
-		total_spmv_time += duration;
+		double start_time = omp_get_wtime();
+		// Calling .noalias() will directly invoke the specialized Eigen kernel based on the types of factors.
+		// In this case this leads to the use of sparse_time_dense_product_impl (defined in MA-Bench-Framework/external/eigen/Eigen/src/SparseCore/SparseDenseProduct.h).
+		// This function is parallelized internally by Eigen when EIGEN_USE_THREADS is defined.
+		// See https://libeigen.gitlab.io/eigen/docs-nightly/TopicMultiThreading.html
+		y.noalias() = m_mat * x;
+		double end_time = omp_get_wtime();
+		eigensolver_spmv_time += 1;
 	}
 };
+
+void print_output(double t_spmv, double t_mgmt, int n_ops)
+{
+	std::cout << "EXTRA_DATA," << t_spmv << "," << t_mgmt << "," << n_ops << std::endl;
+}
 
 template <typename SolverType>
 void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
@@ -85,47 +60,41 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 	solver.setMaxIterations(max_iter);
 	solver.setTolerance(0);
 
-	auto start = std::chrono::high_resolution_clock::now();
-	solver.compute(A);
-	x = solver.solve(b);
-	auto end = std::chrono::high_resolution_clock::now();
+	// Reset SpMV counter
+	Eigen::internal::linsolver_spmv_time = 0.0;
 
-	std::chrono::duration<double> elapsed = end - start;
-	std::cout << "EXTRA_DATA,0," << elapsed.count() << "," << solver.iterations() << std::endl;
+	double start_time = omp_get_wtime();
+	solver.compute(A);
+	// The result needs to be assigned to a variable, otherwise the compiler optimizes away the computation.
+	x = solver.solve(b);
+	double end_time = omp_get_wtime();
+
+	double t_total = end_time - start_time;
+	// I added this variable to Eigen's internal namespace to track SpMV time in ConjugateGradient and BiCGSTAB. The value is updated in their respective source files.
+	// See MA-bench-framework/external/eigen/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h & MA-bench-framework/external/eigen/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h
+	double t_spmv = Eigen::internal::linsolver_spmv_time;
+	double t_mgmt = t_total - t_spmv;
+	print_output(t_spmv, t_mgmt, solver.iterations());
 }
 
-// Eigen runs this internally multithreaded : https://libeigen.gitlab.io/eigen/docs-nightly/TopicMultiThreading.htm
 template <typename SolverType, typename OpType>
-void run_eigen_solver(const CustomSparseMatrix &A, int n_eigvals, int n_bvecs)
+void run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs)
 {
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
+
+	double start_time = omp_get_wtime();
 	solver.init();
+	// We set the tolerance to 0.0 and limit the max iterations (here 1) to ensure the solver does not exit early due to convergence. For benchmarking
+	// purposes, we want to measure a predictable number of iterations without the solver stopping when it finds a "good enough" solution.
+	solver.compute(Spectra::SortRule::LargestMagn, max_restarts, 0.0);
+	double end_time = omp_get_wtime();
 
-	auto start_time = std::chrono::high_resolution_clock::now();
-	// Wir erzwingen 1 Restart mit n_bvecs, um exakt TARGET_SPMV_OPS zu erreichen
-	solver.compute(Spectra::SortRule::LargestMagn, 1, 0.0);
-	auto end_time = std::chrono::high_resolution_clock::now();
-
-	std::chrono::duration<double> elapsed = end_time - start_time;
-	double t_total = elapsed.count();
-	// The spmv_time is the wall time over all threads, this means it will usually go down with more threads
-	double t_spmv = op.total_spmv_time;
+	double t_total = end_time - start_time;
+	double t_spmv = op.eigensolver_spmv_time;
 	double t_mgmt = t_total - t_spmv;
 
-	std::cout << "EXTRA_DATA,"
-			  << t_spmv << ","
-			  << t_mgmt << ","
-			  << solver.num_operations() << std::endl;
-
-	if (solver.info() != Spectra::CompInfo::Successful)
-	{
-		std::clog << "Info: Solver stopped (Code: " << int(solver.info()) << ")" << std::endl;
-	}
-	else
-	{
-		std::cout << "EVs: " << solver.eigenvalues().transpose() << std::endl;
-	}
+	print_output(t_spmv, t_mgmt, solver.num_iterations());
 }
 
 int main(int argc, char **argv)
@@ -138,33 +107,38 @@ int main(int argc, char **argv)
 
 	std::string filename = argv[1];
 	std::string mode = argv[2];
-	int TARGET_SPMV_OPS = (argc >= 4) ? std::stoi(argv[3]) : 1000;
-	// AS LONG AS THIS IS SUFFICIENTLY SMALL (~< TARGET_SPMV_OPS / 2) WE ARE GOOD
-	int EIGEN_VALS_TO_COMPUTE = (argc >= 5) ? std::stoi(argv[4]) : 20;
+	// Linear solvers: Number of iterations ; Eigen solvers: Max number of restarts
+	int arg1 = (argc >= 4) ? std::stoi(argv[3]) : 100;
+	// Linear solvers: unused ; Eigen solvers: Number of eigenvalues to compute
+	int arg2 = (argc >= 5) ? std::stoi(argv[4]) : 20;
+	// Linear solvers: unused ; Eigen solvers: Number of basis vectors
+	int arg3 = (argc >= 6) ? std::stoi(argv[5]) : 20;
+
 	// Set fixed seed for reproducibility
 	std::srand(42);
+
 	CustomSparseMatrix A = load_binary_matrix(filename);
 
 	if (mode == "cg")
 	{
 		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
-		run_linear_solver<Solver>(A, TARGET_SPMV_OPS);
+		run_linear_solver<Solver>(A, arg1);
 	}
 	else if (mode == "bicgstab")
 	{
 		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
 		// does 2 spmv per iteration
-		run_linear_solver<Solver>(A, TARGET_SPMV_OPS / 2);
+		run_linear_solver<Solver>(A, arg1);
 	}
-	else if (mode == "lanczos")
+	else if (mode == "lanczos") // IRLM
 	{
-		using Solver = Spectra::SymEigsSolver<ManualParallelOp>;
-		run_eigen_solver<Solver, ManualParallelOp>(A, EIGEN_VALS_TO_COMPUTE, TARGET_SPMV_OPS);
+		using Solver = Spectra::SymEigsSolver<ManualOp>;
+		run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
 	}
-	else if (mode == "arnoldi")
+	else if (mode == "arnoldi") // IRAM
 	{
-		using Solver = Spectra::GenEigsSolver<ManualParallelOp>;
-		run_eigen_solver<Solver, ManualParallelOp>(A, EIGEN_VALS_TO_COMPUTE, TARGET_SPMV_OPS);
+		using Solver = Spectra::GenEigsSolver<ManualOp>;
+		run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
 	}
 	else
 	{

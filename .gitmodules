@@ -7,3 +7,6 @@
 [submodule "external/artificial-matrix-generator"]
 	path = external/artificial-matrix-generator
 	url = https://github.com/cslab-ntua/artificial-matrix-generator
+[submodule "external/eigen"]
+	path = external/eigen
+	url = https://gitlab.com/libeigen/eigen.git
