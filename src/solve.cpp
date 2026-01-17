@@ -11,6 +11,9 @@
 #include "util.hpp"
 #include <iomanip>
 
+// Apply patch for this file to work:
+// git -C external/eigen apply ../../eigen_bench_instrumentation.patch
+
 struct ManualOp
 {
 	// Spectra expects the following structure for the operator struct. See https://spectralib.org/doc/sparsesymmatprod_8h_source as an example.

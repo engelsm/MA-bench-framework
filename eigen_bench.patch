@@ -1,0 +1,67 @@
+diff --git a/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h b/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h
+index 8fdeb849b..eecdbf0a4 100644
+--- a/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h
++++ b/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h
+@@ -17,6 +17,7 @@
+ namespace Eigen {
+ 
+ namespace internal {
++extern double linsolver_spmv_time;
+ 
+ /** \internal Low-level bi conjugate gradient stabilized algorithm
+  * \param mat The matrix A
+@@ -61,6 +62,7 @@ bool bicgstab(const MatrixType& mat, const Rhs& rhs, Dest& x, const Precondition
+   RealScalar eps = NumTraits<Scalar>::epsilon();
+   Index i = 0;
+   Index restarts = 0;
++  double start_time, end_time;
+ 
+   while (r_norm > tol && i < maxIters) {
+     Scalar rho_old = rho;
+@@ -80,8 +82,10 @@ bool bicgstab(const MatrixType& mat, const Rhs& rhs, Dest& x, const Precondition
+     p = r + beta * (p - w * v);
+ 
+     y = precond.solve(p);
+-
++    start_time = omp_get_wtime();
+     v.noalias() = mat * y;
++    end_time = omp_get_wtime();
++    linsolver_spmv_time += end_time - start_time;
+     Scalar theta = r0.dot(v);
+     // For small angles ∠(r0, v) < eps, random restart.
+     RealScalar v_norm = v.stableNorm();
+@@ -99,8 +103,10 @@ bool bicgstab(const MatrixType& mat, const Rhs& rhs, Dest& x, const Precondition
+     s = r - alpha * v;
+ 
+     z = precond.solve(s);
++    start_time = omp_get_wtime();
+     t.noalias() = mat * z;
+-
++    end_time = omp_get_wtime();
++    linsolver_spmv_time += end_time - start_time;
+     RealScalar tmp = t.squaredNorm();
+     if (tmp > RealScalar(0)) {
+       w = t.dot(s) / tmp;
+diff --git a/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h b/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h
+index 5bb0efe8a..e0980ecf6 100644
+--- a/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h
++++ b/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h
+@@ -16,6 +16,7 @@
+ namespace Eigen {
+ 
+ namespace internal {
++inline double linsolver_spmv_time = 0.0;
+ 
+ /** \internal Low-level conjugate gradient algorithm
+  * \param mat The matrix A
+@@ -63,7 +64,10 @@ EIGEN_DONT_INLINE void conjugate_gradient(const MatrixType& mat, const Rhs& rhs,
+   RealScalar absNew = numext::real(residual.dot(p));  // the square of the absolute value of r scaled by invM
+   Index i = 0;
+   while (i < maxIters) {
++    double start_time = omp_get_wtime();
+     tmp.noalias() = mat * p;  // the bottleneck of the algorithm
++    double end_time = omp_get_wtime();
++    Eigen::internal::linsolver_spmv_time += end_time - start_time;
+ 
+     Scalar alpha = absNew / p.dot(tmp);  // the amount we travel on dir
+     x += alpha * p;                      // update solution
