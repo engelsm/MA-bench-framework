@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 	MtxFlags mtx_flags = get_mtx_flags(input_mtx);
 
 	CustomSparseMatrix A;
-	write_mtx_to_bin(input_mtx, output_bin, A);
+	write_binary_matrix(input_mtx, output_bin, A);
 
 	double reg = compute_regularity(A, 8);
 

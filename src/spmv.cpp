@@ -7,7 +7,6 @@
 #include <chrono>
 #include "util.hpp"
 
-// CONJUGATE GRADIENT METHOD FOR SPARSE MATRICES
 int main(int argc, char **argv)
 {
 	if (argc < 3)
@@ -15,6 +14,8 @@ int main(int argc, char **argv)
 		std::cerr << "Usage: " << argv[0] << " <matrix.bin> <iterations>\n";
 		return 1;
 	}
+
+	std::srand(42);
 
 	CustomSparseMatrix m_mat = load_binary_matrix(argv[1]);
 	int iterations = std::stoi(argv[2]);
@@ -44,7 +45,6 @@ int main(int argc, char **argv)
 
 	std::cout << "EXTRA_DATA,"
 			  << elapsed.count() << ","
-			  << (elapsed.count() / iterations) << ","
 			  << gflops << std::endl;
 
 	return 0;

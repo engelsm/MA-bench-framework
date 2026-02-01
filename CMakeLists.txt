@@ -6,8 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=znver4 -g -fno-omit-frame-pointer -DNDEBUG -DEIGEN_USE_OMP")
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -O3 -march=znver4 -g -fno-omit-frame-pointer -fopenmp")
+  add_compile_options(-O3 -march=znver4 -g -fno-omit-frame-pointer)
 endif()
 find_package(OpenMP REQUIRED)
 
@@ -30,7 +29,8 @@ target_link_libraries(matgen PRIVATE matrix_gen m)
 
 set(PROGRAMS 
     solve
-    #spmv
+    spmv
+    preprocess_matrix
 )
 
 foreach(PROG ${PROGRAMS})
@@ -41,6 +41,6 @@ foreach(PROG ${PROGRAMS})
         ${SPECTRA_INCLUDE_DIR}
         ${FMM_INCLUDE_DIR}
         ${GEN_DIR} 
-        ${EIGEN_SUBMODULE_DIR}   # Submodule-Pfad für Eigen
+        ${EIGEN_SUBMODULE_DIR}   
     )
 endforeach()
