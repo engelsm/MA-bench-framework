@@ -44,14 +44,32 @@ struct ManualOp
 		// See https://libeigen.gitlab.io/eigen/docs-nightly/TopicMultiThreading.html
 		y.noalias() = m_mat * x;
 		double end_time = omp_get_wtime();
-		eigensolver_spmv_time += 1;
+		double duration = end_time - start_time;
+		eigensolver_spmv_time += (duration);
 	}
 };
 
+// We shall split t_mgmt into t_mgmt and t_omp_overhead in the evaluation scripts.
 void print_output(double t_spmv, double t_mgmt, int n_ops)
 {
 	std::cout << "EXTRA_DATA," << t_spmv << "," << t_mgmt << "," << n_ops << std::endl;
 }
+
+/* Every SpMV operation in a single solve process operates on the same matrix A, but a changing vector.
+ * Thus, the sole time per SpMV operation might change over the course of the solving process for both
+ * linear system solvers and eigenvalue solvers. (Testing showed increased times for the first few SpMVs,
+ * but after some iterations the time stabilizes.)
+ *
+ * We fix iterations for all solvers and make convergence impossible.
+ * Linear solver params:
+ * -Max iterations
+ * -Preconditioner
+ *
+ * Eigenvalue solver params:
+ * -Number of restarts
+ * -Number of requested eigenvalues
+ * -Krylov subspace size
+ */
 
 template <typename SolverType>
 void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
@@ -60,6 +78,8 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 	CustomVector x;
 
 	SolverType solver;
+	// We set the tolerance to 0.0 and limit the max iterations to ensure the solver does not exit early due to convergence. For benchmarking
+	// purposes, we want to measure a predictable number of iterations without the solver stopping when it finds a "good enough" solution.
 	solver.setMaxIterations(max_iter);
 	solver.setTolerance(0);
 
@@ -80,6 +100,7 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 	print_output(t_spmv, t_mgmt, solver.iterations());
 }
 
+// See Chapter 4 & 5 of http://li.mit.edu/Archive/Activities/Archive/CourseWork/Ju_Li/MITCourses/18.335/Doc/ARPACK/Lehoucq97.pdf for the theory behind IRAM/IRLM
 template <typename SolverType, typename OpType>
 void run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs)
 {
@@ -88,7 +109,7 @@ void run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigva
 
 	double start_time = omp_get_wtime();
 	solver.init();
-	// We set the tolerance to 0.0 and limit the max iterations (here 1) to ensure the solver does not exit early due to convergence. For benchmarking
+	// We set the tolerance to 0.0 and limit the max iterations to ensure the solver does not exit early due to convergence. For benchmarking
 	// purposes, we want to measure a predictable number of iterations without the solver stopping when it finds a "good enough" solution.
 	solver.compute(Spectra::SortRule::LargestMagn, max_restarts, 0.0);
 	double end_time = omp_get_wtime();
@@ -97,7 +118,38 @@ void run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigva
 	double t_spmv = op.eigensolver_spmv_time;
 	double t_mgmt = t_total - t_spmv;
 
-	print_output(t_spmv, t_mgmt, solver.num_iterations());
+	//.num_iterations() would be the number of restarts.
+	//.num_operations() gives the total number of SpMV operations performed.
+	print_output(t_spmv, t_mgmt, solver.num_operations());
+
+	/* The number of SpMV operations is a variable in Spectra called m_nmatop and counted with the op_counter variable.
+	 * * Definition of Variables:
+	 * - n: Dimension of the matrix (rows/cols).
+	 * - k: Number of eigenvalues requested (Spectra: n_eigvals / nev).
+	 * - m: Dimension of the Krylov subspace / basis size (Spectra: n_bvecs / ncv).
+	 * - max_restarts: Maximum number of Arnoldi/Lanczos update cycles.
+	 *
+	 * We track down the formula for the number of SpMV operations in the following way:
+	 * * 1. init():
+	 * Calls 2 SpMV operations.
+	 * - The first (Arnoldi.h:154) ensures the starting vector is in the range of A.
+	 * - The second (Arnoldi.h:174) computes the first Ritz value and the initial residual f.
+	 *
+	 * 2. First call to compute() -> factorize_from(1, m, op_counter):
+	 * Builds the initial Krylov subspace from the 2nd to the m-th vector.
+	 * - Generates exactly (m - 1) SpMV operations.
+	 *
+	 * 3. Implicit Restarts (for i = 0 to max_restarts - 1):
+	 * Each restart reduces the basis from m down to k and then calls factorize_from(k, m, op_counter).
+	 * - Each call generates exactly (m - k) SpMV operations to refill the basis.
+	 *
+	 * Total SpMV Formula:
+	 * Total = 2 + (m - 1) + [max_restarts * (m - k)] + X
+	 * (where X represents rare extra SpMVs from numerical breakdowns in expand_basis)
+	 *
+	 * Example for (max_restarts=50, k=10, m=30):
+	 * Total = 2 + 29 + [50 * 20] = 1031 SpMVs.
+	 */
 }
 
 int main(int argc, char **argv)

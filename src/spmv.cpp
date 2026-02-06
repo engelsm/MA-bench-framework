@@ -22,6 +22,19 @@ int main(int argc, char **argv)
 	CustomVector x = CustomVector::Random(m_mat.cols());
 	CustomVector y = CustomVector::Zero(m_mat.rows());
 
+	for (int warmup = 0; warmup < 20; ++warmup)
+	{
+#pragma omp parallel for
+		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
+		{
+			Scalar sum = 0;
+			for (CustomSparseMatrix::InnerIterator it(m_mat, i); it; ++it)
+			{
+				sum += it.value() * x(it.col());
+			}
+			y(i) = sum;
+		}
+	}
 	auto start = std::chrono::high_resolution_clock::now();
 
 	for (int iter = 0; iter < iterations; ++iter)

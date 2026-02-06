@@ -3,16 +3,16 @@
 N_VALUES=(28800 57600 115000 230000 518000 864000 2950000)
 NNZ_PER_ROW=30
 RANDOM_FACTORS=(0.0 0.5 1.0)
+MATRIX_PATH="./matrices/itertest"
 
-mkdir -p ./matrices/itertest2
+mkdir -p "$MATRIX_PATH"
 
 for N in "${N_VALUES[@]}"; do
     for R in "${RANDOM_FACTORS[@]}"; do
         # Formatierung: 0.5 -> 0-5
         R_NAME=$(echo "$R" | tr '.' '-')
-        FILENAME="./matrices/itertest/${R_NAME}_N${N}.bin"
+        FILENAME="$MATRIX_PATH/${R_NAME}_N${N}.bin"
         
-        echo "----------------------------------------------------"
         echo "Generating: N=$N | Randomness=$R"
         echo "Target Path: $FILENAME"
         
@@ -21,5 +21,5 @@ for N in "${N_VALUES[@]}"; do
 done
 
 echo "----------------------------------------------------"
-echo "Done. Alle Matrizen wurden in ./matrices/itertest2/ generiert."
-ls -lh ./matrices/itertest2/
+echo "Done. Alle Matrizen wurden in $MATRIX_PATH generiert."
+ls -lh "$MATRIX_PATH"
