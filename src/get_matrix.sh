@@ -11,7 +11,7 @@ wget -O- "$URL" | tar -xzvO --wildcards "*/*.mtx" > "${NAME}.mtx"
 
 # Setup Folders
 MTX_DIR="../matrices/$TYPE/mtx"
-BIN_DIR="../matrices/$TYPE/binary"
+BIN_DIR="../matrices/$TYPE/binary_spmc"
 mkdir -p "$MTX_DIR" "$BIN_DIR"
 
 # Move MTX to destination

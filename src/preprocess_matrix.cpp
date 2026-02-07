@@ -19,20 +19,9 @@ int main(int argc, char *argv[])
 
 	std::string input_mtx = argv[1];
 	std::string output_bin = argv[2];
-	const std::string metadata_csv = "/home/mengelsl/MA-bench-framework/matrices/matrix_metadata.csv"; // hardcoded for now
-	MtxFlags mtx_flags = get_mtx_flags(input_mtx);
-
 	CustomSparseMatrix A;
+
 	write_binary_matrix(input_mtx, output_bin, A);
 
-	double reg = compute_regularity(A, 8);
-
-	save_matrix_metadata(metadata_csv,
-						 output_bin,
-						 mtx_flags,
-						 A.rows(),
-						 A.cols(),
-						 A.nonZeros(), // This counts explicitly stored zeros as well
-						 reg);
 	return 0;
 }

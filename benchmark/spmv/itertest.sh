@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MATRIX_DIR="../matrices/itertest"
+MATRIX_DIR="../../matrices/itertest"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
 OUT="itertest.csv"
 
@@ -49,7 +49,7 @@ for file in "${TEST_FILES[@]}"; do
 
         echo "  -> Cores: $c ($MEM_STR) | Iter: $ITER | CPUs: $CPUS"
         
-        RES=$(numactl -C $CPUS $MEM_POLICY ../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
+        RES=$(numactl -C $CPUS $MEM_POLICY ../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
         
         if [[ -z "$RES" ]]; then
             echo "No output for $BASE with $c cores. Skipping."

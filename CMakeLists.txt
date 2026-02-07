@@ -23,26 +23,12 @@ add_library(matrix_gen STATIC
 target_include_directories(matrix_gen PUBLIC ${GEN_DIR})
 target_link_libraries(matrix_gen PRIVATE OpenMP::OpenMP_C)
 
-add_executable(matgen src/matgen.c)
-target_include_directories(matgen PRIVATE ${GEN_DIR})
-target_link_libraries(matgen PRIVATE matrix_gen m)
-
 set(PROGRAMS 
     solve
     spmv
     preprocess_matrix
-    spmv_likwid
-    testlikwid
     synthgen
 )
-find_path(LIKWID_INCLUDE_DIR NAMES likwid-marker.h PATHS /usr/local/include /usr/include)
-find_library(LIKWID_LIBRARY NAMES likwid PATHS /usr/local/lib /usr/lib)
-
-if(LIKWID_INCLUDE_DIR AND LIKWID_LIBRARY)
-    message(STATUS "LIKWID found: ${LIKWID_LIBRARY}")
-else()
-    message(FATAL_ERROR "LIKWID not found! Bitte installieren oder Pfade anpassen.")
-endif()
 
 foreach(PROG ${PROGRAMS})
     add_executable(${PROG} src/${PROG}.cpp)
@@ -55,9 +41,4 @@ foreach(PROG ${PROGRAMS})
         ${EIGEN_SUBMODULE_DIR}   
     )
 
-    if(PROG STREQUAL "spmv_likwid" OR PROG STREQUAL "testlikwid")
-        target_compile_definitions(${PROG} PRIVATE LIKWID_PERFMON)
-        target_include_directories(${PROG} PRIVATE ${LIKWID_INCLUDE_DIR})
-        target_link_libraries(${PROG} PRIVATE ${LIKWID_LIBRARY})
-    endif()
 endforeach()

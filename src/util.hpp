@@ -148,35 +148,3 @@ inline double compute_regularity(const CustomSparseMatrix &A, int elements_per_c
     double stress_rate = (total_jumps > 0) ? (static_cast<double>(stress_count) / total_jumps * 100.0) : 0.0;
     return stress_rate;
 }
-
-struct MtxFlags
-{
-    std::string field, symmetry;
-};
-
-inline MtxFlags get_mtx_flags(const std::string &mtx_path)
-{
-    std::ifstream f(mtx_path);
-    fast_matrix_market::matrix_market_header header;
-    fast_matrix_market::read_header(f, header);
-
-    return {
-        fast_matrix_market::field_map.at(header.field),
-        fast_matrix_market::symmetry_map.at(header.symmetry)};
-}
-
-inline void save_matrix_metadata(const std::string &csv_path, const std::string &bin_path,
-                                 const MtxFlags &f, int r, int c, int n, double stress)
-{
-    bool is_new = !std::filesystem::exists(csv_path);
-    std::ofstream csv(csv_path, std::ios::app);
-
-    if (is_new)
-        csv << "matrix,rows,cols,nnz,size_mb,stress_pct,field,symmetry\n";
-
-    double mb = (double)std::filesystem::file_size(bin_path) / (1024.0 * 1024.0);
-
-    csv << std::filesystem::path(bin_path).stem().string() << ","
-        << r << "," << c << "," << n << "," << mb << "," << stress << ","
-        << f.field << "," << f.symmetry << "\n";
-}
