@@ -3,20 +3,20 @@
 #SBATCH --time=06:00:00
 #SBATCH --exclusive
 
-EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/sev3"
+EXISTING_DIR=""
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
 else
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    OUTDIR="/home/mengelsl/MA-bench-framework/outputs/$TIMESTAMP"
+    OUTDIR="../../outputs/$TIMESTAMP"
     mkdir -p "$OUTDIR"
 fi
 
 CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
 PLAN="bench_plan.csv"
-MATRIX_DIR="../matrices/itertest"
+MATRIX_DIR="../../matrices/itertest"
 
 [ ! -f "$CSV" ] && echo "Matrix,Cores,NUMA,Run,Iterations,Runtime,Gflops,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
 
@@ -56,7 +56,7 @@ MIN_RUNS=5
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-echo "Interleaved Round-Robin Benchmark gestartet..."
+echo "Starting Benchmarking... Output: $CSV"
 
 for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
     echo "=== RUNDE $run_idx ==="
@@ -98,7 +98,7 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
 
         PERF_RAW=$( { perf stat -x ',' \
             -e instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults \
-            $NUMA_CMD ../build/spmv "$MATRIX_DIR/$matrix" "$iter" 1> "$TMP_OUT"; } 2>&1 )
+            $NUMA_CMD ../../build/spmv "$MATRIX_DIR/$matrix" "$iter" 1> "$TMP_OUT"; } 2>&1 )
 
         # Parsing
         GFLOPS=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f3)
