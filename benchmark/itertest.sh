@@ -4,7 +4,7 @@ MATRIX_DIR="../matrices/itertest"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
 OUT="itertest.csv"
 
-# 1. Iterationen pro Core-Zahl
+# Guessed iterations
 declare -A CORE_ITERATIONS
 CORE_ITERATIONS=(
     [1]=30
@@ -18,14 +18,13 @@ CORE_ITERATIONS=(
 
 CORES=(1 4 8 16 24 32 48)
 
-# Header: MemoryPolicy jetzt hinter Cores
 echo "Matrix,Cores,MemoryPolicy,Iterations,Runtime,Gflops" > "$OUT"
 
 for file in "${TEST_FILES[@]}"; do
     [ -f "$file" ] || continue
     BASE=$(basename "$file")
 
-    echo "Starte Messung für: $BASE"
+    echo "Starting measurement: $BASE"
 
     for c in "${CORES[@]}"; do
         ITER=${CORE_ITERATIONS[$c]}
@@ -33,14 +32,13 @@ for file in "${TEST_FILES[@]}"; do
         export OMP_NUM_THREADS=$c
         export OMP_PROC_BIND=close
         
-        # CPU Binding
         if [ "$c" -eq 1 ]; then
+        #0 is polluted sometimes
             CPUS="1"
         else
             CPUS="0-$((c - 1))"
         fi
 
-        # NUMA Memory Policy: Interleave ab 32 Cores, sonst Local
         if [ "$c" -ge 32 ]; then
             MEM_STR="interleave"
             MEM_POLICY="--interleave=0,1"
@@ -51,11 +49,10 @@ for file in "${TEST_FILES[@]}"; do
 
         echo "  -> Cores: $c ($MEM_STR) | Iter: $ITER | CPUs: $CPUS"
         
-        # Benchmark Aufruf
         RES=$(numactl -C $CPUS $MEM_POLICY ../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
         
         if [[ -z "$RES" ]]; then
-            echo "      !! FEHLER: Kein Output bei $BASE"
+            echo "No output for $BASE with $c cores. Skipping."
             continue
         fi
 
@@ -68,4 +65,4 @@ for file in "${TEST_FILES[@]}"; do
 done
 
 echo "----------------------------------------"
-echo "Fertig! Ergebnisse liegen in $OUT"
+echo "Done. Results saved in $OUT"

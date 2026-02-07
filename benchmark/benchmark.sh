@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --ntasks=1
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 #SBATCH --exclusive
 
-EXISTING_DIR=""
+EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/sev3"
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
@@ -22,9 +22,16 @@ MATRIX_DIR="../matrices/itertest"
 
 check_convergence() {
     local m=$1 c=$2 p=$3
-    grep "^${m},${c},${p}," "$CSV" > series_check.tmp
-    local n=$(wc -l < series_check.tmp)
-    if [ "$n" -lt 5 ]; then echo "fail"; rm -f series_check.tmp; return; fi
+    local tmp_file="$OUTDIR/series_check.tmp"
+    
+    grep "^${m},${c},${p}," "$CSV" > "$tmp_file"
+    
+    local n=$(wc -l < "$tmp_file")
+    if [ "$n" -lt 5 ]; then 
+        echo "fail"
+        rm -f "$tmp_file"
+        return
+    fi
 
     awk -F, '
     BEGIN { t[5]=2.776; t[6]=2.571; t[7]=2.447; t[8]=2.365; t[9]=2.306; t[10]=2.262; 
@@ -39,11 +46,12 @@ check_convergence() {
         t_val = (count <= 15) ? t[count] : 1.96;
         rel_error = (t_val * stderr) / mean;
         if (rel_error <= 0.01) printf "%.4f", rel_error; else print "fail";
-    }' series_check.tmp
-    rm -f series_check.tmp
+    }' "$tmp_file"
+    
+    rm -f "$tmp_file"
 }
 
-MAX_RUNS=20
+MAX_RUNS=25
 MIN_RUNS=5
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
@@ -53,26 +61,25 @@ echo "Interleaved Round-Robin Benchmark gestartet..."
 for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
     echo "=== RUNDE $run_idx ==="
 
-    # Plan einlesen und Header überspringen
     while IFS=, read -r raw_matrix raw_cores raw_mem raw_iter || [ -n "$raw_matrix" ]; do
-        # Cleanup (entfernt \r, führende/anhängende Leerzeichen) MANDATORY!!
+        # Cleanup (removes \r, trailing whitespace) MANDATORY!!
         matrix=$(echo "$raw_matrix" | tr -d '\r' | xargs)
         cores=$(echo "$raw_cores" | tr -d '\r' | xargs)
         mem_policy=$(echo "$raw_mem" | tr -d '\r' | xargs)
         iter=$(echo "$raw_iter" | tr -d '\r' | xargs)
 
-        # Header oder Leerzeilen skippen
+        # Skip Header or Empty Lines
         [[ "$matrix" == "Matrix" || -z "$matrix" ]] && continue
 
-        # NUMA Fix
+        # NUMA Fix (Can probably be removed)
         FINAL_MODE="$mem_policy"
         if [[ "$mem_policy" == "interleave" && "$cores" -le 24 ]]; then FINAL_MODE="localalloc"; fi
 
-        # Wir erzwingen, dass CURRENT_COUNT nur eine einzige Zahl ist
+        # Check runs for this config
         CURRENT_COUNT=$(grep -c "^${matrix},${cores},${FINAL_MODE}," "$CSV" | awk '{print $1}')
-        : ${CURRENT_COUNT:=0} # Fallback auf 0 falls leer
+        : ${CURRENT_COUNT:=0} # Fallback to 0
 
-        # Skip Logik
+        # Skip if there are already enough runs or if convergence is reached
         if (( CURRENT_COUNT >= MAX_RUNS )); then continue; fi
         if (( CURRENT_COUNT >= MIN_RUNS )); then
             CONV=$(check_convergence "$matrix" "$cores" "$FINAL_MODE")
@@ -80,7 +87,6 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         fi
         if (( run_idx <= CURRENT_COUNT )); then continue; fi
 
-        # EXECUTION
         export OMP_NUM_THREADS=$cores
         #Core 0 is often polluted with OS tasks, so we start from 1 if we have more than 1 core
         if [ "$cores" -eq 1 ]; then CPUS="1"; else CPUS="0-$((cores - 1))"; fi

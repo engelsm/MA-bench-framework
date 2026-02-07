@@ -9,7 +9,7 @@ mkdir -p "$MATRIX_PATH"
 
 for N in "${N_VALUES[@]}"; do
     for R in "${RANDOM_FACTORS[@]}"; do
-        # Formatierung: 0.5 -> 0-5
+        # Format: 0.5 -> 0-5
         R_NAME=$(echo "$R" | tr '.' '-')
         FILENAME="$MATRIX_PATH/${R_NAME}_N${N}.bin"
         
@@ -21,5 +21,5 @@ for N in "${N_VALUES[@]}"; do
 done
 
 echo "----------------------------------------------------"
-echo "Done. Alle Matrizen wurden in $MATRIX_PATH generiert."
+echo "Done. Generated in $MATRIX_PATH."
 ls -lh "$MATRIX_PATH"
