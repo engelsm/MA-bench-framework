@@ -7,7 +7,7 @@ NAME=${1#*/}
 
 # Download & Extract .mtx
 URL="https://suitesparse-collection-website.herokuapp.com/MM/${GROUP}/${NAME}.tar.gz"
-wget -O- "$URL" | tar -xzvO --wildcards "*/*.mtx" > "${NAME}.mtx"
+wget -O- "$URL" | tar -xzvO --wildcards "*/${NAME}.mtx" > "${NAME}.mtx"
 
 # Setup Folders
 MTX_DIR="../matrices/$TYPE/mtx"
@@ -20,4 +20,4 @@ mv "${NAME}.mtx" "$MTX_DIR/"
 # Run Preprocessor and save metadata
 ../build/preprocess_matrix "$MTX_DIR/${NAME}.mtx" "$BIN_DIR/${NAME}.bin"
 
-echo "Done."
+echo "Done. Final File Size: $(du -h "$BIN_DIR/${NAME}.bin" | cut -f1)"

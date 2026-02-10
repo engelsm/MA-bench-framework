@@ -9,7 +9,7 @@ if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
 else
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    OUTDIR="../../outputs/$TIMESTAMP"
+    OUTDIR="../../outputs/spmv/$TIMESTAMP"
     mkdir -p "$OUTDIR"
 fi
 

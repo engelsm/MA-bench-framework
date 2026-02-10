@@ -2,7 +2,7 @@
 
 MATRIX_DIR="../../matrices/itertest"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
-OUT="itertest.csv"
+OUT="itertest_spmv.csv"
 
 # Guessed iterations
 declare -A CORE_ITERATIONS
@@ -22,9 +22,9 @@ echo "Matrix,Cores,MemoryPolicy,Iterations,Runtime,Gflops" > "$OUT"
 
 for file in "${TEST_FILES[@]}"; do
     [ -f "$file" ] || continue
-    BASE=$(basename "$file")
+    file_basename=$(basename "$file")
 
-    echo "Starting measurement: $BASE"
+    echo "Starting measurement: $file_basename"
 
     for c in "${CORES[@]}"; do
         ITER=${CORE_ITERATIONS[$c]}
@@ -52,14 +52,14 @@ for file in "${TEST_FILES[@]}"; do
         RES=$(numactl -C $CPUS $MEM_POLICY ../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
         
         if [[ -z "$RES" ]]; then
-            echo "No output for $BASE with $c cores. Skipping."
+            echo "No output for $file_basename with $c cores. Skipping."
             continue
         fi
 
         T=$(echo "$RES" | cut -d',' -f2)
         G=$(echo "$RES" | cut -d',' -f3)
 
-        echo "$BASE,$c,$MEM_STR,$ITER,$T,$G" >> "$OUT"
+        echo "$file_basename,$c,$MEM_STR,$ITER,$T,$G" >> "$OUT"
         echo "      Gflops: $G | Zeit: $T s"
     done
 done
