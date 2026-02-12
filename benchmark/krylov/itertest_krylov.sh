@@ -49,11 +49,8 @@ for algo in "${ALGOS[@]}"; do
                 export OMP_PROC_BIND=close
                 export OMP_PLACES=cores
                 
-                if [ "$c" -eq 1 ]; then
-                    CPUS="1" 
-                else
-                    CPUS="0-$((c - 1))"
-                fi
+
+                CPUS="0-$((c - 1))"
 
                 if [ "$c" -gt 24 ]; then
                     MEM_STR="interleave"

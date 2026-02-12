@@ -60,6 +60,8 @@ check_convergence() {
 
 MAX_RUNS=25
 MIN_RUNS=5
+CORE_OFFSET=0
+NUMA_NODES=0,1
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
@@ -95,9 +97,12 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         if (( run_idx <= CURRENT_COUNT )); then continue; fi
 
         export OMP_NUM_THREADS=$cores
-        #Core 0 is often polluted with OS tasks, so we start from 1 if we have more than 1 core
-        if [ "$cores" -eq 1 ]; then CPUS="1"; else CPUS="0-$((cores - 1))"; fi
-        NUMA_CMD="numactl -C $CPUS --$( [[ "$FINAL_MODE" == "interleave" ]] && echo "interleave=0,1" || echo "localalloc" )"
+        CPUS=$CORE_OFFSET"-$((CORE_OFFSET + cores - 1))"
+        if [[ "$mem_policy" == "interleave" ]]; then
+            NUMA_CMD="numactl -C $CPUS --interleave=$NUMA_NODES"
+        else
+            NUMA_CMD="numactl -C $CPUS --membind=$NUMA_NODES"
+        fi
 
         echo -n "[$(date +%H:%M:%S)] $matrix | Cores: $cores | $FINAL_MODE | Run: $((CURRENT_COUNT+1)) ... "
 
@@ -107,7 +112,6 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
             -e instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults \
             $NUMA_CMD ../../build/spmv "$MATRIX_DIR/$matrix" "$iter" 1> "$TMP_OUT"; } 2>&1 )
 
-        # Parsing
         GFLOPS=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f3)
         T_SPMV=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f2)
         INST=$(echo "$PERF_RAW" | grep "instructions:u" | cut -d',' -f1 | head -n1)
