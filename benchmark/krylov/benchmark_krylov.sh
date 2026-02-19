@@ -17,7 +17,7 @@ TMP_OUT="$OUTDIR/tmp_output.txt"
 PLAN="bench_plan.csv"
 MATRIX_DIR="../../matrices/binary_spmc"
 
-[ ! -f "$CSV" ] && echo "Algo,Matrix,Cores,NUMA,Run,Arg1,Arg2,Arg3,SpMVTime,MgmtTime,N_Ops,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
+[ ! -f "$CSV" ] && echo "Algo,Matrix,Cores,NUMA,Run,Arg1,Arg2,Arg3,SpMVTime,MgmtTime,N_Ops,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault,duration_time" > "$CSV"
 
 MIN_RUNS=5
 MAX_RUNS=25
@@ -93,7 +93,7 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         if [[ "$mem_policy" == "interleave" ]]; then
             NUMA_CMD="numactl -C $CPUS --interleave=$NUMA_NODES"
         else
-            NUMA_CMD="numactl -C $CPUS --membind=$NUMA_NODES"
+            NUMA_CMD="numactl -C $CPUS"
         fi
 
         echo -n "[$(date +%H:%M:%S)] $algo | $matrix | C: $cores | $mem_policy | Run: $((CURRENT_COUNT+1)) ... "
@@ -101,7 +101,7 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         if [ ! -f "$MATRIX_DIR/$matrix" ]; then echo "MISSING FILE: $MATRIX_DIR/$matrix"; continue; fi
 
         PERF_RAW=$( { perf stat -x ',' \
-            -e instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults \
+            -e instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults,duration_time \
             $NUMA_CMD ../../build/solve "$MATRIX_DIR/$matrix" "$algo" "$arg1" "$arg2" "$arg3" 1> "$TMP_OUT"; } 2>&1 )
 
         T_SPMV=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f2)
@@ -114,8 +114,9 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         CMIS=$(echo "$PERF_RAW" | grep "cache-misses:u" | cut -d',' -f1 | head -n1)
         STAL=$(echo "$PERF_RAW" | grep "stalled-cycles-frontend:u" | cut -d',' -f1 | head -n1)
         FAUL=$(echo "$PERF_RAW" | grep "page-faults" | cut -d',' -f1 | head -n1)
+        DURATION=$(echo "$PERF_RAW" | grep "duration_time" | cut -d',' -f1 | head -n1)
 
-        echo "$algo,$matrix,$cores,$mem_policy,$((CURRENT_COUNT+1)),$arg1,$arg2,$arg3,$T_SPMV,$T_MGMT,$N_OPS,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL" >> "$CSV"
+        echo "$algo,$matrix,$cores,$mem_policy,$((CURRENT_COUNT+1)),$arg1,$arg2,$arg3,$T_SPMV,$T_MGMT,$N_OPS,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL,$DURATION" >> "$CSV"
         sync "$CSV"
         echo "done."
         sleep 0.1

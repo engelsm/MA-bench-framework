@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <ctime>
 #include <cmath>
+#include <random> // C++11 random for reproducibility
 
 struct CSR_Matrix
 {
@@ -74,32 +75,37 @@ int main(int argc, char **argv)
 	std::vector<int> row_cols(nnz_per_row);
 	std::vector<int> perm(N);
 
+	// Use C++11 MT19937 for reproducible & thread-safe randomness
+	// This ensures identical matrix structures across all hosts
+	std::mt19937 rng(42);
+	std::uniform_int_distribution<int> uniform_dist(0, N - 1);
+
 	for (int i = 0; i < N; i++)
 	{
 		mtx.row_ptr[i] = i * nnz_per_row;
 
-		// 1. perfekte Bandmatrix
+		// 1. Start with perfect band matrix
 		int start = std::max(0, std::min(N - nnz_per_row, i - nnz_per_row / 2));
 		for (int j = 0; j < nnz_per_row; j++)
 			row_cols[j] = start + j;
 
-		// 2. wie viele Einträge werden random?
+		// 2. How many entries to randomize?
 		int k = (int)std::round(random_factor * nnz_per_row);
 
 		if (k > 0)
 		{
-			// globale Permutation [0..N)
+			// Global permutation [0..N)
 			for (int j = 0; j < N; j++)
 				perm[j] = j;
 
-			// Partial Fisher–Yates
+			// Partial Fisher–Yates shuffle using MT19937
 			for (int j = 0; j < k; j++)
 			{
-				int r = j + rand() % (N - j);
+				int r = j + (uniform_dist(rng) % (N - j));
 				std::swap(perm[j], perm[r]);
 			}
 
-			// ersetze die letzten k Band-Einträge
+			// Replace last k band entries with random columns
 			for (int j = 0; j < k; j++)
 				row_cols[nnz_per_row - 1 - j] = perm[j];
 		}

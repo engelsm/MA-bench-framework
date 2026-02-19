@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --ntasks=1
-#SBATCH --time=06:00:00
+#SBATCH --time=24:00:00
 #SBATCH --exclusive
 
 EXISTING_DIR=""
@@ -15,8 +15,8 @@ fi
 
 CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
-PLAN="bench_plan.csv"
-MATRIX_DIR="../../matrices/itertest"
+PLAN="bench_plan10.csv"
+MATRIX_DIR="../../matrices/itertest2"
 
 [ ! -f "$CSV" ] && echo "Matrix,Cores,NUMA,Run,Iterations,Runtime,Gflops,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
 
@@ -58,7 +58,7 @@ check_convergence() {
     rm -f "$tmp_file"
 }
 
-MAX_RUNS=25
+MAX_RUNS=15
 MIN_RUNS=5
 CORE_OFFSET=0
 NUMA_NODES=0,1
@@ -80,18 +80,14 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         # Skip Header or Empty Lines
         [[ "$matrix" == "Matrix" || -z "$matrix" ]] && continue
 
-        # NUMA Fix (Can probably be removed)
-        FINAL_MODE="$mem_policy"
-        if [[ "$mem_policy" == "interleave" && "$cores" -le 24 ]]; then FINAL_MODE="localalloc"; fi
-
         # Check runs for this config
-        CURRENT_COUNT=$(grep -c "^${matrix},${cores},${FINAL_MODE}," "$CSV" | awk '{print $1}')
+        CURRENT_COUNT=$(grep -c "^${matrix},${cores},${mem_policy}," "$CSV" | awk '{print $1}')
         : ${CURRENT_COUNT:=0} # Fallback to 0
 
         # Skip if there are already enough runs or if convergence is reached
         if (( CURRENT_COUNT >= MAX_RUNS )); then continue; fi
         if (( CURRENT_COUNT >= MIN_RUNS )); then
-            CONV=$(check_convergence "$matrix" "$cores" "$FINAL_MODE")
+            CONV=$(check_convergence "$matrix" "$cores" "$mem_policy")
             [[ "$CONV" != "fail" ]] && continue
         fi
         if (( run_idx <= CURRENT_COUNT )); then continue; fi
@@ -101,10 +97,10 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         if [[ "$mem_policy" == "interleave" ]]; then
             NUMA_CMD="numactl -C $CPUS --interleave=$NUMA_NODES"
         else
-            NUMA_CMD="numactl -C $CPUS --membind=$NUMA_NODES"
+            NUMA_CMD="numactl -C $CPUS --localalloc"
         fi
 
-        echo -n "[$(date +%H:%M:%S)] $matrix | Cores: $cores | $FINAL_MODE | Run: $((CURRENT_COUNT+1)) ... "
+        echo -n "[$(date +%H:%M:%S)] $matrix | Cores: $cores | $mem_policy | Run: $((CURRENT_COUNT+1)) ... "
 
         if [ ! -f "$MATRIX_DIR/$matrix" ]; then echo "MISSING"; continue; fi
 
@@ -121,7 +117,7 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         STAL=$(echo "$PERF_RAW" | grep "stalled-cycles-frontend:u" | cut -d',' -f1 | head -n1)
         FAUL=$(echo "$PERF_RAW" | grep "page-faults" | cut -d',' -f1 | head -n1)
 
-        echo "$matrix,$cores,$FINAL_MODE,$((CURRENT_COUNT+1)),$iter,$T_SPMV,$GFLOPS,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL" >> "$CSV"
+        echo "$matrix,$cores,$mem_policy,$((CURRENT_COUNT+1)),$iter,$T_SPMV,$GFLOPS,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL" >> "$CSV"
         sync "$CSV"
         echo "done."
         sleep 0.1

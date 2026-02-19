@@ -15,14 +15,17 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	std::srand(42);
+	srand(42);
 
 	CustomSparseMatrix m_mat = load_binary_matrix(argv[1]);
 	int iterations = std::stoi(argv[2]);
 	CustomVector x = CustomVector::Random(m_mat.cols());
 	CustomVector y = CustomVector::Zero(m_mat.rows());
 
-	for (int warmup = 0; warmup < 20; ++warmup)
+	// Warmup pass to stabilize cache and memory state
+	// This eliminates cold-start artifacts that are especially problematic
+	// at low core counts where cache efficiency matters most
+	for (int warmup = 0; warmup < 10; ++warmup)
 	{
 #pragma omp parallel for
 		for (Eigen::Index i = 0; i < m_mat.outerSize(); ++i)
@@ -35,6 +38,8 @@ int main(int argc, char **argv)
 			y(i) = sum;
 		}
 	}
+	y.setZero(); // Clear warmup results
+
 	auto start = std::chrono::high_resolution_clock::now();
 
 	for (int iter = 0; iter < iterations; ++iter)
