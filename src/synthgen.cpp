@@ -70,13 +70,9 @@ int main(int argc, char **argv)
 	mtx.col_idx = new int[mtx.nnz];
 	mtx.row_ptr = new int[N + 1];
 
-	srand(42);
-
 	std::vector<int> row_cols(nnz_per_row);
 	std::vector<int> perm(N);
 
-	// Use C++11 MT19937 for reproducible & thread-safe randomness
-	// This ensures identical matrix structures across all hosts
 	std::mt19937 rng(42);
 	std::uniform_int_distribution<int> uniform_dist(0, N - 1);
 

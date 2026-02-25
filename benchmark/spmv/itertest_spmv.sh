@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MATRIX_DIR="../../matrices/itertest2"
+MATRIX_DIR="../../matrices/spmv_synthetic"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
 OUT="itertest_spmv10.csv"
 
@@ -24,45 +24,43 @@ CORES=(1 4 8 16 24 32 48)
 echo "Matrix,Cores,MemoryPolicy,Iterations,Runtime,Gflops" > "$OUT"
 
 for file in "${TEST_FILES[@]}"; do
-    [ -f "$file" ] || continue
     file_basename=$(basename "$file")
 
     N=$(echo "$file_basename" | grep -oP 'N\K\d+')
     B_ITER=${BASE_ITERS[$N]}
     
-    if [ -z "$B_ITER" ]; then B_ITER=10; fi
-
     echo "Starting measurement: $file_basename (N=$N, BaseIter=$B_ITER)"
 
     for c in "${CORES[@]}"; do
         ITER=$(( B_ITER * c ))
-        
         export OMP_NUM_THREADS=$c
-        
         CPUS="0-$((c - 1))"
 
-        if [ "$c" -ge 32 ]; then
-            MEM_STR="interleave"
-            MEM_POLICY="--interleave=0,1"
+        if [ "$c" -gt 24 ]; then
+            POLICIES=("default" "interleave")
         else
-            MEM_STR="localalloc"
-            MEM_POLICY="--localalloc"
+            POLICIES=("default")
         fi
 
-        echo "  -> Cores: $c ($MEM_STR) | Iter: $ITER"
-        
-        RES=$(numactl -C $CPUS $MEM_POLICY ../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
-        
-        if [[ -z "$RES" ]]; then
-            echo "    No output. Skipping."
-            continue
-        fi
+        for p in "${POLICIES[@]}"; do
+            if [ "$p" == "interleave" ]; then
+                MEM_STR="interleave"
+                MEM_POLICY="--interleave=all"
+            else
+                MEM_STR="default"
+                MEM_POLICY=""
+            fi
 
-        T=$(echo "$RES" | cut -d',' -f2)
-        G=$(echo "$RES" | cut -d',' -f3)
+            echo "-Threads: $c ($MEM_STR) | Iter: $ITER"
+            
+            RES=$(numactl -C $CPUS $MEM_POLICY ../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
 
-        echo "$file_basename,$c,$MEM_STR,$ITER,$T,$G" >> "$OUT"
-        echo "     Gflops: $G | Zeit: $T s"
+            T=$(echo "$RES" | cut -d',' -f2)
+            G=$(echo "$RES" | cut -d',' -f3)
+
+            echo "$file_basename,$c,$MEM_STR,$ITER,$T,$G" >> "$OUT"
+            echo "-Gflops: $G | Time: $T s"
+        done
     done
 done
 

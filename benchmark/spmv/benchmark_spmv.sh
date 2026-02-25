@@ -3,22 +3,24 @@
 #SBATCH --time=24:00:00
 #SBATCH --exclusive
 
+#Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh > benchmark.log 2>&1"
+
 EXISTING_DIR=""
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
 else
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    OUTDIR="../../outputs/spmv/$TIMESTAMP"
+    OUTDIR="../../outputs/spmv/clean/$TIMESTAMP"
     mkdir -p "$OUTDIR"
 fi
 
 CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
 PLAN="bench_plan10.csv"
-MATRIX_DIR="../../matrices/itertest2"
+MATRIX_DIR="../../matrices/spmv_synthetic"
 
-[ ! -f "$CSV" ] && echo "Matrix,Cores,NUMA,Run,Iterations,Runtime,Gflops,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
+[ ! -f "$CSV" ] && echo "Matrix,Cores,NUMA,Run,Iterations,Runtime,Gflops,PerfRuntime,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
 
 check_convergence() {
     local m=$1 c=$2 p=$3
@@ -58,10 +60,10 @@ check_convergence() {
     rm -f "$tmp_file"
 }
 
-MAX_RUNS=15
+MAX_RUNS=25
 MIN_RUNS=5
-CORE_OFFSET=0
-NUMA_NODES=0,1
+CORE_OFFSET=24
+NUMA_NODES=1,2
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
@@ -94,22 +96,23 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
 
         export OMP_NUM_THREADS=$cores
         CPUS=$CORE_OFFSET"-$((CORE_OFFSET + cores - 1))"
+        
         if [[ "$mem_policy" == "interleave" ]]; then
             NUMA_CMD="numactl -C $CPUS --interleave=$NUMA_NODES"
         else
-            NUMA_CMD="numactl -C $CPUS --localalloc"
+            NUMA_CMD="numactl -C $CPUS"
         fi
 
         echo -n "[$(date +%H:%M:%S)] $matrix | Cores: $cores | $mem_policy | Run: $((CURRENT_COUNT+1)) ... "
 
-        if [ ! -f "$MATRIX_DIR/$matrix" ]; then echo "MISSING"; continue; fi
-
-        PERF_RAW=$( { perf stat -x ',' \
-            -e instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults \
+        PERF_RAW=$( { ~/perf_for_vm stat -x ',' \
+            -e duration_time,instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults \
             $NUMA_CMD ../../build/spmv "$MATRIX_DIR/$matrix" "$iter" 1> "$TMP_OUT"; } 2>&1 )
 
+        echo Perf Output: $PERF_RAW 
         GFLOPS=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f3)
         T_SPMV=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f2)
+        DUR=$(echo "$PERF_RAW" | grep "duration_time" | cut -d',' -f1 | head -n1)
         INST=$(echo "$PERF_RAW" | grep "instructions:u" | cut -d',' -f1 | head -n1)
         CYCL=$(echo "$PERF_RAW" | grep "cycles:u" | grep -v "ref" | cut -d',' -f1 | head -n1)
         REFC=$(echo "$PERF_RAW" | grep "ref-cycles:u" | cut -d',' -f1 | head -n1)
@@ -117,7 +120,7 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         STAL=$(echo "$PERF_RAW" | grep "stalled-cycles-frontend:u" | cut -d',' -f1 | head -n1)
         FAUL=$(echo "$PERF_RAW" | grep "page-faults" | cut -d',' -f1 | head -n1)
 
-        echo "$matrix,$cores,$mem_policy,$((CURRENT_COUNT+1)),$iter,$T_SPMV,$GFLOPS,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL" >> "$CSV"
+        echo "$matrix,$cores,$mem_policy,$((CURRENT_COUNT+1)),$iter,$T_SPMV,$GFLOPS,$DUR,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL" >> "$CSV"
         sync "$CSV"
         echo "done."
         sleep 0.1
