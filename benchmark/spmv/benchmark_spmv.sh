@@ -4,7 +4,7 @@
 #SBATCH --exclusive
 
 #Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh > benchmark.log 2>&1"
-
+ml tools/numactl/2.0.19-GCCcore-14.2.0
 EXISTING_DIR=""
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
@@ -19,6 +19,12 @@ CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
 PLAN="bench_plan10.csv"
 MATRIX_DIR="../../matrices/spmv_synthetic"
+MAX_RUNS=25
+MIN_RUNS=5
+CORE_OFFSET=0
+NUMA_NODES=0,1
+export OMP_PROC_BIND=close
+export OMP_PLACES=cores
 
 [ ! -f "$CSV" ] && echo "Matrix,Cores,NUMA,Run,Iterations,Runtime,Gflops,PerfRuntime,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
 
@@ -60,12 +66,6 @@ check_convergence() {
     rm -f "$tmp_file"
 }
 
-MAX_RUNS=25
-MIN_RUNS=5
-CORE_OFFSET=24
-NUMA_NODES=1,2
-export OMP_PROC_BIND=close
-export OMP_PLACES=cores
 
 echo "Starting Benchmarking... Output: $CSV"
 
