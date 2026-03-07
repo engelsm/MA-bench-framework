@@ -1,9 +1,9 @@
 #!/bin/bash
 
-N_VALUES=(28800 57600 115000 230000 518000 864000 2200000 5500000)
+N_VALUES=(28800 230000 432000 979200 2880000 14400000)
 NNZ_PER_ROW=30
 RANDOM_FACTORS=(0.0 0.5 1.0)
-MATRIX_PATH="../matrices/itertest2"
+MATRIX_PATH="../matrices/spmv_synth"
 
 mkdir -p "$MATRIX_PATH"
 
@@ -16,10 +16,9 @@ for N in "${N_VALUES[@]}"; do
         echo "Generating: N=$N | Randomness=$R"
         echo "Target Path: $FILENAME"
         
-        ../build/synthgen "$N" "$NNZ_PER_ROW" "$R" "$FILENAME"
+        /home/mengelsl/MA-bench-framework/build/synthgen "$N" "$NNZ_PER_ROW" "$R" "$FILENAME"
     done
 done
 
-echo "----------------------------------------------------"
 echo "Done. Generated in $MATRIX_PATH."
 ls -lh "$MATRIX_PATH"

@@ -1,22 +1,21 @@
 #!/bin/bash
 
-MATRIX_DIR="../../matrices/spmv_synthetic"
+MATRIX_DIR="/home/mengelsl/MA-bench-framework/matrices/spmv_synth"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
 OUT="itertest_spmv5.csv"
 
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
+N_VALUES=(28800 230000 432000 979200 2880000 14400000)
 declare -A BASE_ITERS
 BASE_ITERS=(
-    [28800]=5000
-    [57600]=2500
-    [115000]=1250
-    [230000]=500
-    [518000]=250
-    [864000]=125
-    [2200000]=40
-    [5500000]=15
+    [28800]=1000
+    [230000]=400
+    [432000]=150
+    [979200]=80
+    [2880000]=40
+    [14400000]=10
 )
 
 CORES=(1 4 8 24 48 96)
@@ -32,19 +31,17 @@ for file in "${TEST_FILES[@]}"; do
     echo "Starting measurement: $file_basename (N=$N, BaseIter=$B_ITER)"
 
     for c in "${CORES[@]}"; do
-        ITER=$(( B_ITER * c ))
+        ITER=$(( B_ITER * ((c+1)/2) ))
         export OMP_NUM_THREADS=$c
         
         echo "-Threads: $c | Iter: $ITER"
         
-        # Direkter Aufruf ohne numactl
-        RES=$(../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
+        RES=$(/home/mengelsl/MA-bench-framework/build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
 
         T=$(echo "$RES" | cut -d',' -f2)
-        G=$(echo "$RES" | cut -d',' -f3)
 
-        echo "$file_basename,$c,$ITER,$T,$G" >> "$OUT"
-        echo "-Gflops: $G | Time: $T s"
+        echo "$file_basename,$c,$ITER,$T" >> "$OUT"
+        echo "Time: $T s"
     done
 done
 
