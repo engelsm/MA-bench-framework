@@ -2,7 +2,7 @@
 
 MATRIX_DIR="../../matrices/spmv_synthetic"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
-OUT="itertest_spmv10.csv"
+OUT="itertest_spmv5.csv"
 
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
@@ -19,9 +19,9 @@ BASE_ITERS=(
     [5500000]=15
 )
 
-CORES=(1 4 8 16 24 32 48)
+CORES=(1 4 8 24 48 96)
 
-echo "Matrix,Cores,MemoryPolicy,Iterations,Runtime,Gflops" > "$OUT"
+echo "Matrix,Cores,Iterations,Runtime,Gflops" > "$OUT"
 
 for file in "${TEST_FILES[@]}"; do
     file_basename=$(basename "$file")
@@ -34,35 +34,18 @@ for file in "${TEST_FILES[@]}"; do
     for c in "${CORES[@]}"; do
         ITER=$(( B_ITER * c ))
         export OMP_NUM_THREADS=$c
-        CPUS="0-$((c - 1))"
+        
+        echo "-Threads: $c | Iter: $ITER"
+        
+        # Direkter Aufruf ohne numactl
+        RES=$(../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
 
-        if [ "$c" -gt 24 ]; then
-            POLICIES=("default" "interleave")
-        else
-            POLICIES=("default")
-        fi
+        T=$(echo "$RES" | cut -d',' -f2)
+        G=$(echo "$RES" | cut -d',' -f3)
 
-        for p in "${POLICIES[@]}"; do
-            if [ "$p" == "interleave" ]; then
-                MEM_STR="interleave"
-                MEM_POLICY="--interleave=all"
-            else
-                MEM_STR="default"
-                MEM_POLICY=""
-            fi
-
-            echo "-Threads: $c ($MEM_STR) | Iter: $ITER"
-            
-            RES=$(numactl -C $CPUS $MEM_POLICY ../../build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
-
-            T=$(echo "$RES" | cut -d',' -f2)
-            G=$(echo "$RES" | cut -d',' -f3)
-
-            echo "$file_basename,$c,$MEM_STR,$ITER,$T,$G" >> "$OUT"
-            echo "-Gflops: $G | Time: $T s"
-        done
+        echo "$file_basename,$c,$ITER,$T,$G" >> "$OUT"
+        echo "-Gflops: $G | Time: $T s"
     done
 done
 
-echo "----------------------------------------"
 echo "Done. Results saved in $OUT"

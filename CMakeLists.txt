@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  add_compile_options(-O3 -march=znver4 -g -fno-omit-frame-pointer)
+  add_compile_options(-O3 -march=znver4)
 endif()
 find_package(OpenMP REQUIRED)
 

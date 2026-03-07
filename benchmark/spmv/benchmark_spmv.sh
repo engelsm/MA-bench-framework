@@ -3,36 +3,41 @@
 #SBATCH --time=24:00:00
 #SBATCH --exclusive
 
-#Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh > benchmark.log 2>&1"
-ml tools/numactl/2.0.19-GCCcore-14.2.0
-EXISTING_DIR=""
+# Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh > benchmark.log 2>&1"
 
+# Parameter von der Kommandozeile
+ENV=$1
+NUMA_POLICY=$2
+BOOST=$3
+NUMA_BALANCING=$4
+
+# Verzeichnis-Struktur sicherstellen
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
 else
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    OUTDIR="../../outputs/spmv/clean/$TIMESTAMP"
+    OUTDIR="$HOME/MA-bench-framework/outputs/spmv/again/$ENV"
     mkdir -p "$OUTDIR"
 fi
 
 CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
-PLAN="bench_plan10.csv"
-MATRIX_DIR="../../matrices/spmv_synthetic"
-MAX_RUNS=25
+PLAN="$HOME/MA-bench-framework/benchmark/spmv/bench_plan.csv"
+MATRIX_DIR="$HOME/MA-bench-framework/matrices/spmv_synthetic"
+BINARY="$HOME/MA-bench-framework/build/spmv"
+
+MAX_RUNS=20
 MIN_RUNS=5
 CORE_OFFSET=0
-NUMA_NODES=0,1
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-[ ! -f "$CSV" ] && echo "Matrix,Cores,NUMA,Run,Iterations,Runtime,Gflops,PerfRuntime,Insn,Cycl,RefCycl,Cache_Miss,Stalls,PgFault" > "$CSV"
-
+# Funktion zur Konvergenzprüfung (t-Verteilung)
 check_convergence() {
     local m=$1 c=$2 p=$3
     local tmp_file="$OUTDIR/series_check.tmp"
     
-    grep "^${m},${c},${p}," "$CSV" > "$tmp_file"
+    # Grep nur auf Matrix (Spalte 4) und Cores (Spalte 5)
+    awk -F, -v m="$m" -v c="$c" '$4==m && $5==c {print $0}' "$CSV" > "$tmp_file"
     
     local n=$(wc -l < "$tmp_file")
     if [ "$n" -lt 5 ]; then 
@@ -48,83 +53,98 @@ check_convergence() {
         t[16]=2.131; t[17]=2.120; t[18]=2.110; t[19]=2.101; t[20]=2.086;
         t[21]=2.080; t[22]=2.074; t[23]=2.069; t[24]=2.064; t[25]=2.060;
     }
-    { sum += $7; sumsq += $7*$7; count++ }
+    { sum += $8; sumsq += $8*$8; count++ }
     END {
         if (count < 5) { print "fail"; exit }
         mean = sum / count; if (mean == 0) { print "fail"; exit }
         variance = (sumsq - (sum*sum/count)) / (count - 1);
         std = sqrt(variance > 0 ? variance : 0);
         stderr = std / sqrt(count);
-        
-        # After 25 use default value
         t_val = (count <= 25) ? t[count] : 1.96;
-        
         rel_error = (t_val * stderr) / mean;
         if (rel_error <= 0.01) printf "%.4f", rel_error; else print "fail";
     }' "$tmp_file"
-    
     rm -f "$tmp_file"
 }
 
+# Initialisiere CSV mit Header falls nicht vorhanden
+if [ ! -f "$CSV" ]; then
+    echo "NUMA_Policy,Boost,NUMA_Balancing,Matrix,Cores,Run,Iterations,Intern_Runtime,Intern_Gflops,Perf_DurationTime,Perf_Insn,Perf_Cycl,Perf_CacheMisses,Perf_dTLBLoadMisses" > "$CSV"
+fi
 
-echo "Starting Benchmarking... Output: $CSV"
+echo "Starting SpMV Benchmark. Plan: $PLAN | Output: $CSV"
 
 for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
     echo "=== ROUND $run_idx ==="
 
-    while IFS=, read -r raw_matrix raw_cores raw_mem raw_iter || [ -n "$raw_matrix" ]; do
-        # Cleanup (removes \r, trailing whitespace) MANDATORY!!
-        matrix=$(echo "$raw_matrix" | tr -d '\r' | xargs)
-        cores=$(echo "$raw_cores" | tr -d '\r' | xargs)
-        mem_policy=$(echo "$raw_mem" | tr -d '\r' | xargs)
-        iter=$(echo "$raw_iter" | tr -d '\r' | xargs)
+    while IFS=, read -r raw_matrix raw_cores raw_iter || [ -n "$raw_matrix" ]; do
+        # 1. CLEANUP (WICHTIG gegen stoi-Fehler)
+        matrix=$(echo "$raw_matrix" | tr -d '\r\n' | xargs)
+        cores=$(echo "$raw_cores" | tr -d '\r\n' | xargs)
+        iter=$(echo "$raw_iter" | tr -d '\r\n' | xargs)
 
-        # Skip Header or Empty Lines
-        [[ "$matrix" == "Matrix" || -z "$matrix" ]] && continue
+        # Skip Header oder leere Zeilen
+        [[ "$matrix" == "Matrix" || -z "$matrix" || -z "$iter" ]] && continue
 
-        # Check runs for this config
-        CURRENT_COUNT=$(grep -c "^${matrix},${cores},${mem_policy}," "$CSV" | awk '{print $1}')
-        : ${CURRENT_COUNT:=0} # Fallback to 0
+        # 2. VALIDIERUNG
+        FULL_MATRIX_PATH="$MATRIX_DIR/$matrix"
+        if [ ! -f "$FULL_MATRIX_PATH" ]; then
+            echo "ERROR: Matrix file not found: $FULL_MATRIX_PATH"
+            continue
+        fi
 
-        # Skip if there are already enough runs or if convergence is reached
+        # Zähle bisherige Runs für diese Config
+        CURRENT_COUNT=$(awk -F, -v m="$matrix" -v c="$cores" '$4==m && $5==c {count++} END {print count+0}' "$CSV")
+
+        # Prüfe ob wir diesen Run machen müssen
         if (( CURRENT_COUNT >= MAX_RUNS )); then continue; fi
         if (( CURRENT_COUNT >= MIN_RUNS )); then
-            CONV=$(check_convergence "$matrix" "$cores" "$mem_policy")
+            CONV=$(check_convergence "$matrix" "$cores" "$iter")
             [[ "$CONV" != "fail" ]] && continue
         fi
+        # Verhindere doppelte Runs im gleichen Schleifendurchgang
         if (( run_idx <= CURRENT_COUNT )); then continue; fi
 
         export OMP_NUM_THREADS=$cores
-        CPUS=$CORE_OFFSET"-$((CORE_OFFSET + cores - 1))"
-        
-        if [[ "$mem_policy" == "interleave" ]]; then
-            NUMA_CMD="numactl -C $CPUS --interleave=$NUMA_NODES"
-        else
-            NUMA_CMD="numactl -C $CPUS"
+        RUN_NR=$((CURRENT_COUNT + 1))
+
+        echo -n "[$(date +%H:%M:%S)] $matrix | Cores: $cores | Run: $RUN_NR ... "
+
+        # 3. PERF AUFRUF (mit -- Trenner für das Binary)
+        PERF_RAW=$( { ~/perf_for_vm stat -x ',' \
+            -e duration_time,instructions,cycles,cache-misses,dTLB-load-misses \
+            -- "$BINARY" "$FULL_MATRIX_PATH" "$iter" 1> "$TMP_OUT"; } 2>&1 )
+
+        # Check auf C++ Crash (stoi Fehler abfangen)
+        if [[ "$PERF_RAW" == *"terminate"* || "$PERF_RAW" == *"Aborted"* ]]; then
+            echo "FAILED (C++ Crash). Matrix: $matrix, Iter: $iter"
+            echo "Perf Error Output: $PERF_RAW"
+            continue
         fi
 
-        echo -n "[$(date +%H:%M:%S)] $matrix | Cores: $cores | $mem_policy | Run: $((CURRENT_COUNT+1)) ... "
+        # Daten-Extraktion
+        OUT_Intern_Runtime=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f2)
+        OUT_Intern_Gflops=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f3)
+        
+        # Falls EXTRA_DATA leer ist, gab es ein Problem im Programm
+        if [ -z "$OUT_Intern_Runtime" ]; then
+            echo "FAILED (No EXTRA_DATA in output)."
+            continue
+        fi
 
-        PERF_RAW=$( { ~/perf_for_vm stat -x ',' \
-            -e duration_time,instructions:u,cycles:u,ref-cycles:u,cache-misses:u,stalled-cycles-frontend:u,page-faults \
-            $NUMA_CMD ../../build/spmv "$MATRIX_DIR/$matrix" "$iter" 1> "$TMP_OUT"; } 2>&1 )
+        OUT_Perf_DurationTime=$(echo "$PERF_RAW" | grep "duration_time" | cut -d',' -f1 | head -n1)
+        OUT_Perf_Instructions=$(echo "$PERF_RAW" | grep "instructions" | cut -d',' -f1 | head -n1)
+        OUT_Perf_Cycles=$(echo "$PERF_RAW" | grep "cycles" | cut -d',' -f1 | head -n1)
+        OUT_Perf_CacheMisses=$(echo "$PERF_RAW" | grep "cache-misses" | cut -d',' -f1 | head -n1)
+        OUT_Perf_dTLBLoadMisses=$(echo "$PERF_RAW" | grep "dTLB-load-misses" | cut -d',' -f1 | head -n1)
 
-        echo Perf Output: $PERF_RAW 
-        GFLOPS=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f3)
-        T_SPMV=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f2)
-        DUR=$(echo "$PERF_RAW" | grep "duration_time" | cut -d',' -f1 | head -n1)
-        INST=$(echo "$PERF_RAW" | grep "instructions:u" | cut -d',' -f1 | head -n1)
-        CYCL=$(echo "$PERF_RAW" | grep "cycles:u" | grep -v "ref" | cut -d',' -f1 | head -n1)
-        REFC=$(echo "$PERF_RAW" | grep "ref-cycles:u" | cut -d',' -f1 | head -n1)
-        CMIS=$(echo "$PERF_RAW" | grep "cache-misses:u" | cut -d',' -f1 | head -n1)
-        STAL=$(echo "$PERF_RAW" | grep "stalled-cycles-frontend:u" | cut -d',' -f1 | head -n1)
-        FAUL=$(echo "$PERF_RAW" | grep "page-faults" | cut -d',' -f1 | head -n1)
-
-        echo "$matrix,$cores,$mem_policy,$((CURRENT_COUNT+1)),$iter,$T_SPMV,$GFLOPS,$DUR,$INST,$CYCL,$REFC,$CMIS,$STAL,$FAUL" >> "$CSV"
+        # In CSV schreiben
+        echo "$NUMA_POLICY,$BOOST,$NUMA_BALANCING,$matrix,$cores,$RUN_NR,$iter,$OUT_Intern_Runtime,$OUT_Intern_Gflops,$OUT_Perf_DurationTime,$OUT_Perf_Instructions,$OUT_Perf_Cycles,$OUT_Perf_CacheMisses,$OUT_Perf_dTLBLoadMisses" >> "$CSV"
         sync "$CSV"
         echo "done."
-        sleep 0.1
 
     done < "$PLAN"
 done
+
 rm -f "$TMP_OUT" series_check.tmp
+echo "Benchmark finished successfully."
