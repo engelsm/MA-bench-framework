@@ -19,7 +19,7 @@ fi
 CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
 PLAN="$HOME/MA-bench-framework/benchmark/krylov/bench_plan.csv"
-MATRIX_DIR="$HOME/MA-bench-framework/matrices/krylov_synth"
+MATRIX_DIR="$HOME/MA-bench-framework/matrices/binary_spmc"
 BINARY="$HOME/MA-bench-framework/build/solve"
 
 MAX_RUNS=20
@@ -94,10 +94,22 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         OUT_Perf_CacheMisses=$(echo "$PERF_RAW" | grep "cache-misses" | cut -d',' -f1 | head -n1)
         OUT_Perf_dTLBLoadMisses=$(echo "$PERF_RAW" | grep "dTLB-load-misses" | cut -d',' -f1 | head -n1)
 
-        printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" \
-            "$algo" "$matrix" "$cores" "$arg1" "$arg2" "$arg3" "$run_nr" "$OUT_Intern_SpMVTime" "$OUT_Intern_MgmtTime" "$OUT_Intern_NOps" \
-            "$OUT_Perf_DurationTime" "$OUT_Perf_Instructions" "$OUT_Perf_Cycles" \
-            "$OUT_Perf_CacheMisses" "$OUT_Perf_dTLBLoadMisses" >> "$CSV"
+        printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" \
+            "$algo" \
+            "$matrix" \
+            "$cores" \
+            "$arg1" \
+            "$arg2" \
+            "$arg3" \
+            "$run_nr" \
+            "$OUT_Intern_SpMVTime" \
+            "$OUT_Intern_MgmtTime" \
+            "$OUT_Intern_NOps" \
+            "$OUT_Perf_DurationTime" \
+            "$OUT_Perf_Instructions" \
+            "$OUT_Perf_Cycles" \
+            "$OUT_Perf_CacheMisses" \
+            "$OUT_Perf_dTLBLoadMisses" >> "$CSV"
         sync "$CSV"
         echo "done."
 

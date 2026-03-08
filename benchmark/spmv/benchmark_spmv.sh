@@ -7,7 +7,7 @@
 
 ENV=$1
 
-EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/spmv/_new/sev"
+EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/spmv/_new/sme"
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
