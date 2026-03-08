@@ -3,11 +3,11 @@
 #SBATCH --time=24:00:00
 #SBATCH --exclusive
 
-# Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh sev default off off > benchmark.log 2>&1"
+# Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh sev > benchmark.log 2>&1"
 
 ENV=$1
 
-EXISTING_DIR=""
+EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/spmv/_new/sev"
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
@@ -22,7 +22,7 @@ PLAN="$HOME/MA-bench-framework/benchmark/spmv/bench_plan.csv"
 MATRIX_DIR="$HOME/MA-bench-framework/matrices/spmv_synth"
 BINARY="$HOME/MA-bench-framework/build/spmv"
 
-MAX_RUNS=5
+MAX_RUNS=20
 MIN_RUNS=5 #awk logic breaks if this is < 2, as divison by 0 occurs
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
@@ -41,15 +41,14 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         cores=$(echo "$raw_cores" | tr -d '\r\n' | xargs)
         iter=$(echo "$raw_iter" | tr -d '\r\n' | xargs)
 
-        # Skip Header oder leere Zeilen
-        [[ "$matrix" == "Matrix" || -z "$matrix" || -z "$iter" ]] && continue
+        # Skip Header 
+        [[ "$matrix" == "Matrix" ]] && continue
 
         RUNTIMES=$(awk -F, -v m="$matrix" -v c="$cores" '$1==m && $2==c {print $5}' "$CSV")
         CURRENT_COUNT=$(echo "$RUNTIMES" | grep -c -v "^$")
-
         if (( CURRENT_COUNT >= MAX_RUNS )); then continue; fi
         if (( CURRENT_COUNT >= MIN_RUNS )); then
-            CONV=$(echo "$RUNTIMES" | awk "
+            CONV=$(echo "$RUNTIMES" | awk '
             BEGIN { 
                 t[5]=2.776; t[6]=2.571; t[7]=2.447; t[8]=2.365; t[9]=2.306; t[10]=2.262; 
                 t[11]=2.228; t[12]=2.201; t[13]=2.179; t[14]=2.160; t[15]=2.145;
@@ -64,7 +63,7 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
                 t_val = (count <= 25) ? t[count] : 1.96;
                 rel_error = (t_val * stderr) / mean;
                 if (rel_error <= 0.01) print "done"; else print "fail";
-            }")
+            }')
             [[ "$CONV" == "done" ]] && continue
         fi
 
@@ -90,8 +89,10 @@ for (( run_idx=1; run_idx<=MAX_RUNS; run_idx++ )); do
         OUT_Perf_CacheMisses=$(echo "$PERF_RAW" | grep "cache-misses" | cut -d',' -f1 | head -n1)
         OUT_Perf_dTLBLoadMisses=$(echo "$PERF_RAW" | grep "dTLB-load-misses" | cut -d',' -f1 | head -n1)
 
-        # In CSV schreiben
-        echo "$matrix,$cores,$run_nr,$iter,$OUT_Intern_Runtime,$OUT_Intern_Gflops,$OUT_Perf_DurationTime,$OUT_Perf_Instructions,$OUT_Perf_Cycles,$OUT_Perf_CacheMisses,$OUT_Perf_dTLBLoadMisses" >> "$CSV"
+        printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" \
+            "$matrix" "$cores" "$run_nr" "$iter" "$OUT_Intern_Runtime" "$OUT_Intern_Gflops" \
+            "$OUT_Perf_DurationTime" "$OUT_Perf_Instructions" "$OUT_Perf_Cycles" \
+            "$OUT_Perf_CacheMisses" "$OUT_Perf_dTLBLoadMisses" >> "$CSV"
         sync "$CSV"
         echo "done."
 

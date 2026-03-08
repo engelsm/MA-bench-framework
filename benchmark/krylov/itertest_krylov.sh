@@ -6,11 +6,13 @@ OUT="itertest_krylov.csv"
 
 MAX_ITER_LINEAR=1000
 MAX_RESTARTS_EIGEN=5
+N_EIGVALS=2 #For stress test k=10, m=20
+N_BVECS=10
 
-CORES=(1 4 8 16 24 32 48)
+CORES=(1 4 8 24 48 96)
 ALGOS=("cg" "bicgstab" "lanczos" "arnoldi")
 
-echo "Algo,Matrix,Cores,MemoryPolicy,Arg1,Arg2,Arg3,SpMV_Time,Mgmt_Time,N_OPS" > "$OUT"
+echo "Algo,Matrix,Cores,Arg1,Arg2,Arg3,SpMV_Time,Mgmt_Time,N_OPS" > "$OUT"
 
 for algo in "${ALGOS[@]}"; do
     if [[ "$algo" == "cg" || "$algo" == "lanczos" ]]; then
@@ -22,7 +24,7 @@ for algo in "${ALGOS[@]}"; do
     fi
 
     for sub_dir in "${DIRS[@]}"; do
-        current_full_path="../../matrices/binary_spmc/$sub_dir"
+        current_full_path="/home/mengelsl/MA-bench-framework/matrices/binary_spmc/$sub_dir"
         
         for file in "$current_full_path"/*.bin; do
             [ -f "$file" ] || continue
@@ -40,27 +42,18 @@ for algo in "${ALGOS[@]}"; do
                     ARG2=0
                     ARG3=0
                 else
-                    ARG1=$(( (MAX_RESTARTS_EIGEN * c / 48) + 5 ))
-                    ARG2=2 #For stress test k=10, m=20
-                    ARG3=10
+                    ARG1=$(( (BASE_VAL * (c + 48) / 96) + 20 ))
+                    ARG2="$N_EIGVALS" 
+                    ARG3="$N_BVECS"
                 fi
 
                 export OMP_NUM_THREADS=$c
                 export OMP_PROC_BIND=close
                 export OMP_PLACES=cores
                 
-
                 CPUS="0-$((c - 1))"
 
-                if [ "$c" -gt 24 ]; then
-                    MEM_STR="interleave"
-                    MEM_POLICY="--interleave=0,1"
-                else
-                    MEM_STR="localalloc"
-                    MEM_POLICY="--localalloc"
-                fi
-
-                RES=$(numactl -C $CPUS $MEM_POLICY ../../build/solve "$file" "$algo" "$ARG1" "$ARG2" "$ARG3" | grep "EXTRA_DATA")
+                RES=$(/home/mengelsl/MA-bench-framework/build/solve "$file" "$algo" "$ARG1" "$ARG2" "$ARG3" | grep "EXTRA_DATA")
                 
                 if [[ -z "$RES" ]]; then
                     echo "     ERROR: No output for $FILE_REF"
@@ -71,8 +64,8 @@ for algo in "${ALGOS[@]}"; do
                 T_MGMT=$(echo "$RES" | cut -d',' -f3)
                 N_OPS=$(echo "$RES" | cut -d',' -f4)
 
-                echo "$algo,$FILE_REF,$c,$MEM_STR,$ARG1,$ARG2,$ARG3,$T_SPMV,$T_MGMT,$N_OPS" >> "$OUT"
-                echo "     Cores $c Done: $T_SPMV s"
+                echo "$algo,$FILE_REF,$c,$ARG1,$ARG2,$ARG3,$T_SPMV,$T_MGMT,$N_OPS" >> "$OUT"
+                echo "     Cores $c Done: $T_SPMV s (SpMV), $T_MGMT s (Mgmt), $N_OPS Ops"
             done
         done
     done
