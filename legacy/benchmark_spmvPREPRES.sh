@@ -7,19 +7,19 @@
 
 ENV=$1
 
-EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/spmv/_new/sme"
+EXISTING_DIR=""
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
 else
-    OUTDIR="$HOME/MA-bench-framework/outputs/spmv/_new/$ENV"
+    OUTDIR="$HOME/MA-bench-framework/outputs/spmv/postPRES/$ENV"
     mkdir -p "$OUTDIR"
 fi
 
 CSV="$OUTDIR/summary_final.csv"
 TMP_OUT="$OUTDIR/tmp_output.txt"
 PLAN="$HOME/MA-bench-framework/benchmark/spmv/bench_plan.csv"
-MATRIX_DIR="$HOME/MA-bench-framework/matrices/spmv_synth"
+MATRIX_DIR="$HOME/MA-bench-framework/matrices/spmv_matrices"
 BINARY="$HOME/MA-bench-framework/build/spmv"
 
 MAX_RUNS=20

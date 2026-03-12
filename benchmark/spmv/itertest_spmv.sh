@@ -1,26 +1,28 @@
 #!/bin/bash
 
-MATRIX_DIR="/home/mengelsl/MA-bench-framework/matrices/spmv_synth"
+MATRIX_DIR="/home/mengelsl/MA-bench-framework/matrices/spmv"
 TEST_FILES=($(ls $MATRIX_DIR/*.bin))
-OUT="itertest_spmv5.csv"
+OUT="itertest_72.csv"
 
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-N_VALUES=(28800 230000 432000 979200 2880000 14400000)
+N_VALUES=(28807 201649 432105 1008246 2880703 8642110 17284220)
+
 declare -A BASE_ITERS
 BASE_ITERS=(
-    [28800]=1000
-    [230000]=400
-    [432000]=150
-    [979200]=80
-    [2880000]=40
-    [14400000]=10
+    [28807]=1000
+    [201649]=400
+    [432105]=150
+    [1008246]=80
+    [2880703]=30
+    [8642110]=10
+    [17284220]=5
 )
 
-CORES=(1 4 8 24 48 96)
+CORES=(72)
 
-echo "Matrix,Cores,Iterations,Runtime,Gflops" > "$OUT"
+echo "Matrix,Cores,Iterations,Runtime" > "$OUT"
 
 for file in "${TEST_FILES[@]}"; do
     file_basename=$(basename "$file")
@@ -36,7 +38,7 @@ for file in "${TEST_FILES[@]}"; do
         
         echo "-Threads: $c | Iter: $ITER"
         
-        RES=$(/home/mengelsl/MA-bench-framework/build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
+        RES=$(taskset -c 0-$((c-1)) /home/mengelsl/MA-bench-framework/build/spmv "$file" "$ITER" | grep "EXTRA_DATA")
 
         T=$(echo "$RES" | cut -d',' -f2)
 

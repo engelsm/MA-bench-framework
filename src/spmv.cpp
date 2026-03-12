@@ -19,22 +19,27 @@ int main(int argc, char **argv)
 
 	CustomSparseMatrix A = load_binary_matrix(argv[1]);
 	int max_iterations = std::stoi(argv[2]);
+
 	CustomVector x = CustomVector::Random(A.cols());
 	CustomVector y = CustomVector::Zero(A.rows());
 
 	auto start = std::chrono::high_resolution_clock::now();
 
+	auto *row_ptr = A.outerIndexPtr();
+	auto *col_idx = A.innerIndexPtr();
+	auto *values = A.valuePtr();
+
 	for (int iter = 0; iter < max_iterations; ++iter)
 	{
 #pragma omp parallel for
-		for (Eigen::Index i = 0; i < A.outerSize(); ++i)
+		for (int i = 0; i < A.rows(); i++)
 		{
 			Scalar sum = 0;
-			for (CustomSparseMatrix::InnerIterator it(A, i); it; ++it)
+			for (int j = row_ptr[i]; j < row_ptr[i + 1]; j++)
 			{
-				sum += it.value() * x(it.col());
+				sum += values[j] * x[col_idx[j]];
 			}
-			y(i) = sum;
+			y[i] = sum;
 		}
 	}
 

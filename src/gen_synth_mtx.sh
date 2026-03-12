@@ -1,9 +1,9 @@
 #!/bin/bash
 
-N_VALUES=(28800 230000 432000 979200 2880000 14400000)
+N_VALUES=(28807 201649 432105 1008246 2880703 8642110 17284220)  
 NNZ_PER_ROW=30
 RANDOM_FACTORS=(0.0 0.5 1.0)
-MATRIX_PATH="../matrices/spmv_synth"
+MATRIX_PATH="/home/mengelsl/MA-bench-framework/matrices/spmv"
 
 mkdir -p "$MATRIX_PATH"
 

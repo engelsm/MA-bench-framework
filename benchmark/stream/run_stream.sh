@@ -23,14 +23,12 @@ for N in "${THREADS_LIST[@]}"; do
     
     if [ "$ENV" == "native" ]; then
         if [ "$NUMA" == "interleave" ]; then
-            # Bestimme Nodes basierend auf Thread-Anzahl
             case $N in
                 24) NODES="0" ;;
                 48) NODES="0,1" ;;
                 96) NODES="0,1,2,3" ;;
-                *)  NODES="all" ;; # Fallback
             esac
-            CMD="numactl --interleave=$NODES -C 0-$((N-1)) ./stream.out"
+            CMD="numactl -C 0-$((N-1)) --interleave=$NODES ./stream.out"
         else
             # Standard: Nur CPU-Binding, Memory bleibt lokal (default)
             CMD="numactl -C 0-$((N-1)) ./stream.out"
