@@ -17,6 +17,7 @@ set(EIGEN_SUBMODULE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen")
 set(PROGRAMS 
     solve
     spmv
+    spmv_deep_analysis
     preprocess_matrix
     synthgen
 )

@@ -4,7 +4,7 @@
 
 ENV=$1
 
-EXISTING_DIR="/home/mengelsl/MA-bench-framework/outputs/spmv/postPRES2/sme"
+EXISTING_DIR=""
 
 if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
     OUTDIR="$EXISTING_DIR"
@@ -31,6 +31,9 @@ if [ ! -f "$CSV" ]; then
     echo "Matrix,Cores,Run,Iterations,Intern_Runtime,Intern_Gflops" > "$CSV"
 fi
 
+TOTAL_CONFIGS=$(grep -vE '^(Matrix|#|$|[[:space:]]*$)' "$PLAN" | wc -l)
+CONFIG_NR=0
+
 echo "Starting $ENV SpMV Benchmark. Plan: $PLAN | Output: $CSV"
 
 
@@ -42,6 +45,8 @@ while IFS=, read -r raw_matrix raw_cores raw_iter || [ -n "$raw_matrix" ]; do
 
     [[ "$matrix" == "Matrix" || -z "$matrix" ]] && continue
 
+	((CONFIG_NR++))
+
 	CURRENT_RUNS=$(awk -F',' -v m="$matrix" -v c="$cores" \
 	'$1==m && $2==c {count++} END{print count+0}' "$CSV")
 
@@ -52,7 +57,7 @@ while IFS=, read -r raw_matrix raw_cores raw_iter || [ -n "$raw_matrix" ]; do
 
     FULL_MATRIX_PATH="$MATRIX_DIR/$matrix"
     
-    echo "=== $matrix | Cores: $cores ==="
+	echo "=== [$CONFIG_NR/$TOTAL_CONFIGS] $matrix | Cores: $cores ==="
 
     for ((run_nr=CURRENT_RUNS+1; run_nr<=RUNS; run_nr++)); do
         
