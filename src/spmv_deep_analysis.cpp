@@ -23,8 +23,9 @@ int main(int argc, char **argv)
 
 	std::chrono::duration<double> io_elapsed = io_end - io_start;
 
-	std::cout << "IO_LOAD,"
+	std::cout << "IO_LOAD,1,"
 			  << io_elapsed.count()
+			  << ",0"
 			  << std::endl;
 
 	int max_iterations = std::stoi(argv[2]);
@@ -57,7 +58,7 @@ int main(int argc, char **argv)
 		double gflops = (2.0 * A.nonZeros()) / (elapsed.count() * 1e9);
 
 		std::cout << "ITER,"
-				  << iter << ","
+				  << iter + 1 << ","
 				  << elapsed.count() << ","
 				  << gflops
 				  << std::endl;
