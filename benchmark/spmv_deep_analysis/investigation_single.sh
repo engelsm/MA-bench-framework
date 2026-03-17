@@ -1,5 +1,4 @@
 #!/bin/bash
-ml tools/numactl/2.0.19-GCCcore-14.2.0
 
 ENV=$1
 if [ -z "$ENV" ]; then
@@ -12,7 +11,6 @@ MATRIX_DIR="$BASE_DIR/matrices/spmv"
 BINARY="$BASE_DIR/build/spmv_deep_analysis"
 
 CSV_A="$BASE_DIR/benchmark/spmv_deep_analysis/${ENV}a.csv"
-CSV_B="$BASE_DIR/benchmark/spmv_deep_analysis/${ENV}b.csv"
 DEBUG_LOG="$BASE_DIR/benchmark/spmv_deep_analysis/${ENV}_numa_details.log"
 
 MATRICES=(0-0_N1008246.bin) 
@@ -23,7 +21,6 @@ ITER=1000
 mkdir -p "$BASE_DIR/benchmark/spmv_deep_analysis"
 
 echo "Matrix,Cores,Run,Type,Iteration,Runtime,Gflops" > "$CSV_A"
-echo "Matrix,Cores,Run,Type,Iteration,Runtime,Gflops" > "$CSV_B"
 echo "--- NUMA ERROR LOG: $(date) ---" > "$DEBUG_LOG"
 
 export OMP_PROC_BIND=close
@@ -48,39 +45,23 @@ for MATRIX_FILE in "${MATRICES[@]}"; do
             numactl --physcpubind=0-$((CORES - 1)) --membind=$M_A $BINARY "$MATRIX_PATH" $ITER > "${CSV_A}.tmp" &
             PID_A=$!
 
-            numactl --physcpubind=$((CORES))-$((2 * CORES - 1)) --membind=$M_B $BINARY "$MATRIX_PATH" $ITER > "${CSV_B}.tmp" &
-            PID_B=$!
-
             sleep 1.2
             {
                 echo "--- RUN $RUN_ID | $MATRIX_FILE ---"
-                
-                # Instanz A Check
                 if [ -d "/proc/$PID_A" ]; then
                     echo ">> Instanz A Misallocs (Target $T_A):"
                     grep "N[0-3]=" "/proc/$PID_A/numa_maps" | grep -v "$T_A="
                     echo ">> Instanz A NUMA Stats:"
                     numastat -p $PID_A
                 fi
-                
-                echo -e "\n"
-                
-                # Instanz B Check
-                if [ -d "/proc/$PID_B" ]; then
-                    echo ">> Instanz B Misallocs (Target $T_B):"
-                    grep "N[0-3]=" "/proc/$PID_B/numa_maps" | grep -v "$T_B="
-                    echo ">> Instanz B NUMA Stats:"
-                    numastat -p $PID_B
-                fi
                 echo -e "-----------------------------------\n"
             } >> "$DEBUG_LOG"
 
-            wait $PID_A $PID_B
+            wait $PID_A 
 
             awk -v mat="$MATRIX_FILE" -v c="$CORES" -v r="$RUN_ID" -F',' 'BEGIN {OFS=","} { if(NF==4) print mat, c, r, $1, $2, $3, $4 }' "${CSV_A}.tmp" >> "$CSV_A"
-            awk -v mat="$MATRIX_FILE" -v c="$CORES" -v r="$RUN_ID" -F',' 'BEGIN {OFS=","} { if(NF==4) print mat, c, r, $1, $2, $3, $4 }' "${CSV_B}.tmp" >> "$CSV_B"
 
-            rm -f "${CSV_A}.tmp" "${CSV_B}.tmp"
+            rm -f "${CSV_A}.tmp"
             sleep 0.2
         done
     done
