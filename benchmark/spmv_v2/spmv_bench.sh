@@ -17,7 +17,7 @@ else
 fi
 
 BASE_DIR="$HOME/MA-bench-framework"
-PLAN="$BASE_DIR/benchmark/spmv/bench_plan.csv"
+PLAN="$BASE_DIR/benchmark/spmv_v2/bench_plan.csv"
 MATRIX_DIR="$BASE_DIR/matrices/spmv"
 BINARY="$BASE_DIR/build/spmv"
 CSV="$OUTDIR/results.csv"
@@ -79,19 +79,20 @@ while IFS=, read -r raw_matrix raw_cores raw_iter || [ -n "$raw_matrix" ]; do
         # 1 = NUMA_optimize flag enabled in the C++ binary
         ~/perf_for_vm stat -x ',' \
             -e duration_time,instructions,cycles,cache-misses,dTLB-load-misses \
-            -- numactl -c 0-$(($cores - 1)) --localalloc \
-            "$BINARY" "$FULL_MATRIX_PATH" "$iter" 0 > "$TMP_OUT" 2> "$PERF_TMP" &
+            -- numactl -C 0-$(($cores - 1)) --localalloc \
+            "$BINARY" "$FULL_MATRIX_PATH" "$iter" 1 > "$TMP_OUT" 2> "$PERF_TMP" &
         
-        BENCH_PID=$!
+        PERF_PID=$!
 
         # Wait briefly to ensure the binary has finished loading and "touching" memory
         sleep 1 
+
+        BENCH_PID=$(pgrep -P $PERF_PID)
 
         # Capture NUMA distribution while the process is actively calculating
         if ps -p $BENCH_PID > /dev/null; then
             {
                 echo "--- Benchmarking: $matrix | Cores: $cores | Run: $run_nr ---"
-                echo "--- PID: $BENCH_PID ---"
                 echo "--- /proc/$BENCH_PID/numa_maps ---"
                 cat "/proc/$BENCH_PID/numa_maps" 2>/dev/null
                 echo -e "\n--- numastat -p $BENCH_PID ---"
@@ -100,7 +101,7 @@ while IFS=, read -r raw_matrix raw_cores raw_iter || [ -n "$raw_matrix" ]; do
         fi
 
         # Wait for the benchmark process to finish
-        wait $BENCH_PID
+        wait $PERF_PID
         PERF_RAW=$(cat "$PERF_TMP")
 
         # Extract internal metrics from binary output
