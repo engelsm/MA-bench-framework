@@ -1,4 +1,3 @@
-#define EIGEN_USE_THREADS
 #include <omp.h>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -18,7 +17,7 @@ int main(int argc, char **argv)
 	srand(42);
 
 	auto io_start = std::chrono::high_resolution_clock::now();
-	CustomSparseMatrix A = load_binary_matrix(argv[1]);
+	CustomSparseMatrix A = load_binary_matrix(argv[1], false);
 	auto io_end = std::chrono::high_resolution_clock::now();
 
 	std::chrono::duration<double> io_elapsed = io_end - io_start;
@@ -41,7 +40,7 @@ int main(int argc, char **argv)
 	{
 		auto start = std::chrono::high_resolution_clock::now();
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(static)
 		for (int i = 0; i < A.rows(); i++)
 		{
 			Scalar sum = 0;
@@ -57,6 +56,7 @@ int main(int argc, char **argv)
 
 		double gflops = (2.0 * A.nonZeros()) / (elapsed.count() * 1e9);
 
+		// subject to change: if i really want to use this, values should be collected and reported simultaneously at the end of the run, not after each iteration.
 		std::cout << "ITER,"
 				  << iter + 1 << ","
 				  << elapsed.count() << ","

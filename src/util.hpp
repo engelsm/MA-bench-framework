@@ -77,8 +77,8 @@ inline int write_binary_matrix(const std::string &mtx_path, const std::string &b
     return 0;
 }
 
-// Load a custom binary CSR format matrix from bin_path and return it as CustomSparseMatrix.
-inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path)
+// Load a custom binary CSR format matrix from bin_path and return it as CustomSparseMatrix. Optimize Linux first-touch NUMA policy if NUMA_optimize is true.
+inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path, bool NUMA_optimize)
 {
     std::ifstream in(bin_path, std::ios::binary);
     if (!in)
@@ -95,9 +95,32 @@ inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path)
     CustomSparseMatrix A(rows, cols);
     A.resizeNonZeros(nnz);
 
-    in.read(reinterpret_cast<char *>(A.outerIndexPtr()), sizeof(StorageIndex) * (rows + 1));
-    in.read(reinterpret_cast<char *>(A.innerIndexPtr()), sizeof(StorageIndex) * nnz);
-    in.read(reinterpret_cast<char *>(A.valuePtr()), sizeof(Scalar) * nnz);
+    StorageIndex *outer = A.outerIndexPtr();
+    StorageIndex *inner = A.innerIndexPtr();
+    Scalar *vals = A.valuePtr();
+
+    if (NUMA_optimize)
+    {
+#pragma omp parallel
+        {
+#pragma omp for schedule(static)
+            for (StorageIndex i = 0; i <= rows; ++i)
+            {
+                outer[i] = 0;
+            }
+
+#pragma omp for schedule(static)
+            for (StorageIndex i = 0; i < nnz; ++i)
+            {
+                inner[i] = 0;
+                vals[i] = 0.0;
+            }
+        }
+    }
+
+    in.read(reinterpret_cast<char *>(outer), sizeof(StorageIndex) * (rows + 1));
+    in.read(reinterpret_cast<char *>(inner), sizeof(StorageIndex) * nnz);
+    in.read(reinterpret_cast<char *>(vals), sizeof(Scalar) * nnz);
 
     in.close();
     return A;

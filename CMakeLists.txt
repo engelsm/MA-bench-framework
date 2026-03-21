@@ -31,5 +31,4 @@ foreach(PROG ${PROGRAMS})
         ${FMM_INCLUDE_DIR}
         ${EIGEN_SUBMODULE_DIR}   
     )
-
 endforeach()

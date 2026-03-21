@@ -1,4 +1,3 @@
-#define EIGEN_USE_THREADS
 #include <omp.h>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -9,19 +8,36 @@
 
 int main(int argc, char **argv)
 {
-	if (argc < 3)
+	if (argc < 4)
 	{
-		std::cerr << "Usage: " << argv[0] << " <matrix.bin> <iterations>\n";
+		std::cerr << "Usage: " << argv[0] << " <matrix.bin> <iterations> <NUMA_optimize 0/1>\n";
 		return 1;
 	}
 
 	srand(42);
 
-	CustomSparseMatrix A = load_binary_matrix(argv[1]);
 	int max_iterations = std::stoi(argv[2]);
+	bool NUMA_optimize = (std::stoi(argv[3]) != 0);
+	CustomSparseMatrix A = load_binary_matrix(argv[1], NUMA_optimize);
 
-	CustomVector x = CustomVector::Random(A.cols());
-	CustomVector y = CustomVector::Zero(A.rows());
+	CustomVector x(A.cols());
+	CustomVector y(A.rows());
+
+	if (NUMA_optimize)
+	{
+#pragma omp parallel for schedule(static)
+		for (int i = 0; i < A.rows(); i++)
+			y[i] = 0.0;
+
+#pragma omp parallel for schedule(static)
+		for (int i = 0; i < A.cols(); i++)
+			x[i] = static_cast<Scalar>(rand()) / RAND_MAX;
+	}
+	else
+	{
+		y.setZero();
+		x.setRandom();
+	}
 
 	auto start = std::chrono::high_resolution_clock::now();
 
@@ -31,7 +47,7 @@ int main(int argc, char **argv)
 
 	for (int iter = 0; iter < max_iterations; ++iter)
 	{
-#pragma omp parallel for
+#pragma omp parallel for schedule(static)
 		for (int i = 0; i < A.rows(); i++)
 		{
 			Scalar sum = 0;

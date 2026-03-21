@@ -172,7 +172,7 @@ int main(int argc, char **argv)
 	// Set fixed seed for reproducibility
 	std::srand(42);
 
-	CustomSparseMatrix A = load_binary_matrix(filename);
+	CustomSparseMatrix A = load_binary_matrix(filename, false);
 
 	if (mode == "cg")
 	{
