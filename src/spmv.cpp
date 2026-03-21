@@ -10,6 +10,7 @@ int main(int argc, char **argv)
 {
 	if (argc < 4)
 	{
+		// NUMA_optimize=true only works as intended if the process calling this function has a NUMA policy that allocates memory locally (e.g., not interleaved,etc.)
 		std::cerr << "Usage: " << argv[0] << " <matrix.bin> <iterations> <NUMA_optimize 0/1>\n";
 		return 1;
 	}

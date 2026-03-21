@@ -78,6 +78,7 @@ inline int write_binary_matrix(const std::string &mtx_path, const std::string &b
 }
 
 // Load a custom binary CSR format matrix from bin_path and return it as CustomSparseMatrix. Optimize Linux first-touch NUMA policy if NUMA_optimize is true.
+// NUMA_optimize=true only works as intended if the process calling this function has a NUMA policy that allocates memory locally (e.g., not interleaved,etc.)
 inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path, bool NUMA_optimize)
 {
     std::ifstream in(bin_path, std::ios::binary);
