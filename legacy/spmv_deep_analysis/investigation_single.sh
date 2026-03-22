@@ -1,4 +1,5 @@
 #!/bin/bash
+ml tools/numactl/2.0.19-GCCcore-14.2.0
 
 ENV=$1
 if [ -z "$ENV" ]; then
@@ -39,10 +40,12 @@ for MATRIX_FILE in "${MATRICES[@]}"; do
             M_B=2-3; T_B="N[23]"
         fi
 
+        T_A="N1"
+
         for ((RUN_ID=1; RUN_ID<=RUNS; RUN_ID++)); do
             echo "[$(date +%H:%M:%S)] Run $RUN_ID | Matrix: $MATRIX_FILE | Cores: $CORES"
 
-            numactl --physcpubind=0-$((CORES - 1)) --membind=$M_A $BINARY "$MATRIX_PATH" $ITER > "${CSV_A}.tmp" &
+            numactl --physcpubind=24-47 --membind=1 $BINARY "$MATRIX_PATH" $ITER > "${CSV_A}.tmp" &
             PID_A=$!
 
             sleep 1.2

@@ -2,82 +2,98 @@
 
 # Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash benchmark_spmv.sh sev > benchmark.log 2>&1"
 
+ml tools/numactl/2.0.19-GCCcore-14.2.0
+
 ENV=$1
-
-EXISTING_DIR=""
-
-if [ -n "$EXISTING_DIR" ] && [ -d "$EXISTING_DIR" ]; then
-    OUTDIR="$EXISTING_DIR"
-else
-    OUTDIR="$HOME/MA-bench-framework/outputs/spmv/postPRES2/$ENV"
-    mkdir -p "$OUTDIR"
-fi
-
 BASE_DIR="$HOME/MA-bench-framework"
-PLAN="$BASE_DIR/benchmark/spmv/bench_plan.csv"
+OUTDIR="$BASE_DIR/outputs/spmv/v2/$ENV"
+
+mkdir -p "$OUTDIR"
+RESULTS_CSV="$OUTDIR/results.csv"
+ITER_CSV="$OUTDIR/iter.csv"
+
+PLAN="$BASE_DIR/benchmark/spmv_v2/bench_plan.csv"
 MATRIX_DIR="$BASE_DIR/matrices/spmv"
-BINARY="$BASE_DIR/build/spmv"
-CSV="$OUTDIR/results.csv"
-TMP_OUT="$OUTDIR/tmp_output.txt"
+BINARY="$BASE_DIR/build/spmv_deep_analysis"
 
 RUNS=15
 
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-mkdir -p "$OUTDIR"
-
-if [ ! -f "$CSV" ]; then
-    echo "Matrix,Cores,Run,Iterations,Intern_Runtime,Intern_Gflops" > "$CSV"
+if [ ! -f "$RESULTS_CSV" ]; then
+    echo "Matrix,Cores,Run,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses" > "$RESULTS_CSV"
+fi
+if [ ! -f "$ITER_CSV" ]; then
+    echo "Run,Iter,Time,GFLOPS" > "$ITER_CSV"
 fi
 
-TOTAL_CONFIGS=$(grep -vE '^(Matrix|#|$|[[:space:]]*$)' "$PLAN" | wc -l)
-CONFIG_NR=0
+echo "Starting $ENV SpMV Benchmark. Plan: $PLAN | Output: $OUTDIR"
 
-echo "Starting $ENV SpMV Benchmark. Plan: $PLAN | Output: $CSV"
-
-
-while IFS=, read -r raw_matrix raw_cores raw_iter || [ -n "$raw_matrix" ]; do
+while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix" ]; do
     
+    # Trim whitespace
     matrix=$(echo "$raw_matrix" | xargs)
     cores=$(echo "$raw_cores" | xargs)
+    numa=$(echo "$raw_numa" | xargs)
     iter=$(echo "$raw_iter" | xargs)
 
     [[ "$matrix" == "Matrix" || -z "$matrix" ]] && continue
 
-	((CONFIG_NR++))
+    CURRENT_RUNS=$(awk -F',' -v m="$matrix" -v c="$cores" '$1==m && $2==c {count++} END{print count+0}' "$RESULTS_CSV")
 
-	CURRENT_RUNS=$(awk -F',' -v m="$matrix" -v c="$cores" \
-	'$1==m && $2==c {count++} END{print count+0}' "$CSV")
-
-	if (( CURRENT_RUNS >= RUNS )); then
-		echo "Skipping $matrix | cores=$cores (already done)"
-		continue
-	fi
+    if (( CURRENT_RUNS >= RUNS )); then
+        echo "Skipping $matrix | cores=$cores (already completed)"
+        continue
+    fi
 
     FULL_MATRIX_PATH="$MATRIX_DIR/$matrix"
+
+    CORE_RANGE="0-$(($cores - 1))"
+
+    if [[ "$numa" == "default" ]]; then
+        NUMA_FLAG=""
+    elif [[ "$numa" == "interleave" ]]; then
+        NUMA_FLAG="--interleave=all"
+    elif [[ "$numa" == "localalloc" ]]; then
+        NUMA_FLAG="--localalloc"
+    fi
+
+    NUMA_MAPS_DIR="$OUTDIR/numa_logs/${matrix}_c${cores}"
     
-	echo "=== [$CONFIG_NR/$TOTAL_CONFIGS] $matrix | Cores: $cores ==="
+    mkdir -p "$NUMA_MAPS_DIR"
+
+    echo "=== $matrix | Cores: $cores ==="
 
     for ((run_nr=CURRENT_RUNS+1; run_nr<=RUNS; run_nr++)); do
         
-        export OMP_NUM_THREADS=$cores
         echo -n "[$(date +%H:%M:%S)] Run $run_nr/$RUNS ... "
 
-        taskset -c 0-$((cores-1)) "$BINARY" "$FULL_MATRIX_PATH" "$iter" > "$TMP_OUT"
+        NUMA_LOG="$NUMA_MAPS_DIR/run_${run_nr}.numa"
 
-        OUT_Runtime=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f2)
-        OUT_Gflops=$(grep "EXTRA_DATA" "$TMP_OUT" | cut -d',' -f3)
+        # 1:Matrix, 2:Iters, 3:NUMA_opt(0/1), 4:Run_ID, 5:Cores, 6:Stats_CSV, 7:Output_Dir
+        numactl -C $CORE_RANGE $NUMA_FLAG \
+            "$BINARY" "$FULL_MATRIX_PATH" "$iter" 0 "$run_nr" "$cores" "$OUTDIR" &
+        
+        PID=$!
 
-        printf "%s,%s,%s,%s,%s,%s\n" \
-            "$matrix" "$cores" "$run_nr" "$iter" \
-            "$OUT_Runtime" "$OUT_Gflops" >> "$CSV"
+        sleep 1
+        if ps -p $PID > /dev/null; then
+            {
+                echo "TIMESTAMP: $(date +%H:%M:%S)"
+                echo "--- /proc/$PID/numa_maps ---"
+                cat "/proc/$PID/numa_maps" 2>/dev/null
+                echo -e "\n--- numastat -p $PID ---"
+                numastat -p $PID 2>/dev/null
+            } > "$NUMA_LOG"
+        fi
 
-        sync "$CSV"
-
+        wait $PID
         echo "done."
     done
 done < "$PLAN"
 
-rm -f "$TMP_OUT"
-echo "Benchmark finished. Results in $CSV"
+echo "Benchmark finished."
+echo "Results: $RESULTS_CSV"
+echo "Iterations: $ITER_CSV"
+echo "NUMA-Logs: $OUTDIR/numa_logs/"
