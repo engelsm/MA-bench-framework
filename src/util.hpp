@@ -81,6 +81,7 @@ inline int write_binary_matrix(const std::string &mtx_path, const std::string &b
 // NUMA_optimize=true only works as intended if the process calling this function has a NUMA policy that allocates memory locally (e.g., not interleaved,etc.)
 inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path, bool NUMA_optimize)
 {
+    // Potentially improve alignment as Eigen apparently only guarantees 16-byte (not 64) alignment, which sucks for AVX.
     std::ifstream in(bin_path, std::ios::binary);
     if (!in)
     {
@@ -125,50 +126,4 @@ inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path, bool N
 
     in.close();
     return A;
-}
-
-/**
- * Analyzes the structural regularity of a sparse matrix in CSR format.
- * (This is not to be confused with numerical regularity.)
- * Focuses on the column index jumps which determine the cache efficiency
- * of the vector x during SpMV (y = Ax). A is stored consecutively in memory,
- * but the access pattern to x depends on the column indices of A.
- * Even though consecutive values might trigger additional cache loads, they are not
- * counted as stress-inducing jumps, because the hardware prefetcher can
- * handle them efficiently.
- */
-inline double compute_regularity(const CustomSparseMatrix &A, int elements_per_cache_line = 8)
-{
-    std::vector<StorageIndex> all_jumps;
-    all_jumps.reserve(A.nonZeros());
-
-    const StorageIndex *outer = A.outerIndexPtr();
-    const StorageIndex *inner = A.innerIndexPtr();
-
-    long long stress_count = 0;
-    long long total_jumps = 0;
-
-    for (StorageIndex i = 0; i < A.rows(); ++i)
-    {
-        StorageIndex row_start = outer[i];
-        StorageIndex row_end = outer[i + 1];
-
-        // We need at least two elements in a row to calculate a jump distance.
-        for (StorageIndex j = row_start; j < row_end - 1; ++j)
-        {
-            // Calculate absolute distance between consecutive column indices.
-            StorageIndex jump = std::abs(inner[j + 1] - inner[j]);
-            all_jumps.push_back(jump);
-
-            // If the jump exceeds the cache line capacity,
-            // the access of vector x at that position is likely to cause a cache miss.
-            if (jump > elements_per_cache_line)
-                stress_count++;
-
-            total_jumps++;
-        }
-    }
-
-    double stress_rate = (total_jumps > 0) ? (static_cast<double>(stress_count) / total_jumps * 100.0) : 0.0;
-    return stress_rate;
 }

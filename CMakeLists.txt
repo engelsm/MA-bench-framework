@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # for vscode compile_commands.json
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  add_compile_options(-O3 -march=znver4)
+  add_compile_options(-O3)
 endif()
 find_package(OpenMP REQUIRED)
 
@@ -18,6 +18,7 @@ set(PROGRAMS
     solve
     spmv
     spmv_deep_analysis
+    spmv_deep_analysis_manual
     preprocess_matrix
     synthgen
 )

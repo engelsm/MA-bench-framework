@@ -12,21 +12,23 @@ mkdir -p "$OUTDIR"
 RESULTS_CSV="$OUTDIR/results.csv"
 ITER_CSV="$OUTDIR/iter.csv"
 
-PLAN="$BASE_DIR/benchmark/spmv_v2/bench_plan.csv"
+PLAN="$BASE_DIR/benchmark/spmv/bench_plan.csv"
 MATRIX_DIR="$BASE_DIR/matrices/spmv"
 BINARY="$BASE_DIR/build/spmv_deep_analysis"
 
-RUNS=15
+RUNS=50
 
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 if [ ! -f "$RESULTS_CSV" ]; then
-    echo "Matrix,Cores,Run,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses" > "$RESULTS_CSV"
+    echo "Matrix,Cores,Run,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches,offset1,offset2,offset3" > "$RESULTS_CSV"
 fi
 if [ ! -f "$ITER_CSV" ]; then
     echo "Run,Iter,Time,GFLOPS" > "$ITER_CSV"
 fi
+#echo bash env length
+echo "Environment Variables: $(printenv | wc -l)"
 
 echo "Starting $ENV SpMV Benchmark. Plan: $PLAN | Output: $OUTDIR"
 
@@ -52,11 +54,18 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix"
     CORE_RANGE="0-$(($cores - 1))"
 
     if [[ "$numa" == "default" ]]; then
-        NUMA_FLAG=""
+        if [ "$cores" -le 24 ]; then
+            TARGET_NODE=0
+        elif [ "$cores" -le 48 ]; then
+            TARGET_NODE=0,1
+        elif [ "$cores" -le 72 ]; then
+            TARGET_NODE=0,1,2
+        elif [ "$cores" -le 96 ]; then
+            TARGET_NODE=0,1,2,3
+        fi
+        NUMA_FLAG="--membind=$TARGET_NODE"
     elif [[ "$numa" == "interleave" ]]; then
         NUMA_FLAG="--interleave=all"
-    elif [[ "$numa" == "localalloc" ]]; then
-        NUMA_FLAG="--localalloc"
     fi
 
     NUMA_MAPS_DIR="$OUTDIR/numa_logs/${matrix}_c${cores}"
@@ -72,7 +81,7 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix"
         NUMA_LOG="$NUMA_MAPS_DIR/run_${run_nr}.numa"
 
         # 1:Matrix, 2:Iters, 3:NUMA_opt(0/1), 4:Run_ID, 5:Cores, 6:Stats_CSV, 7:Output_Dir
-        numactl -C $CORE_RANGE $NUMA_FLAG \
+        setarch $(uname -m) -R numactl -C $CORE_RANGE $NUMA_FLAG \
             "$BINARY" "$FULL_MATRIX_PATH" "$iter" 0 "$run_nr" "$cores" "$OUTDIR" &
         
         PID=$!
