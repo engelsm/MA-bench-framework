@@ -14,8 +14,6 @@ set(EIGEN_SUBMODULE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen")
 set(PROGRAMS 
     solve
     spmv
-    spmv_deep_analysis
-    spmv_deep_analysis_manual
     #preprocess_matrix
     synthgen
 )
@@ -31,9 +29,11 @@ foreach(PROG ${PROGRAMS})
         "${STD_LIB_DIR}/libgomp.a"
         "${GCC_LIB_DIR}/libgcc.a"
         "${GCC_LIB_DIR}/libgcc_eh.a"
+        "-Wl,-Bstatic"      
+        "m" 
+        "-Wl,-Bdynamic"     
         "-Wl,--end-group"
         "pthread"
-        "m"
         "c"
         "dl"
     )

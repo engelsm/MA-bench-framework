@@ -45,10 +45,10 @@ for MATRIX_FILE in "${MATRICES[@]}"; do
         for ((RUN_ID=1; RUN_ID<=RUNS; RUN_ID++)); do
             echo "[$(date +%H:%M:%S)] Run $RUN_ID | Matrix: $MATRIX_FILE | Cores: $CORES"
 
-            numactl --physcpubind=0-$((CORES - 1)) --membind=$M_A $BINARY "$MATRIX_PATH" $ITER > "${CSV_A}.tmp" &
+            numactl --physcpubind=0-$((CORES - 1)) --membind=$M_A $BINARY "$MATRIX_PATH" $ITER 0 $RUN_ID $CORES . > "${CSV_A}.tmp" &
             PID_A=$!
 
-            numactl --physcpubind=$((CORES))-$((2 * CORES - 1)) --membind=$M_B $BINARY "$MATRIX_PATH" $ITER > "${CSV_B}.tmp" &
+            numactl --physcpubind=$((CORES))-$((2 * CORES - 1)) --membind=$M_B $BINARY "$MATRIX_PATH" $ITER 0 $RUN_ID $CORES . > "${CSV_B}.tmp" &
             PID_B=$!
 
             sleep 1.2

@@ -127,3 +127,26 @@ inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path, bool N
     in.close();
     return A;
 }
+
+/**
+ * Perform Sparse Matrix-Vector Multiplication (SpMV) using CSR format.
+ * https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)
+ */
+inline void spmv_csr(int rows, const int *row_ptr, const int *col_idx, const Scalar *values, const CustomVector &x, CustomVector &y)
+{
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < rows; i++)
+    {
+        Scalar sum = 0;
+        for (int j = row_ptr[i]; j < row_ptr[i + 1]; j++)
+            sum += values[j] * x[col_idx[j]];
+        y[i] = sum;
+    }
+}
+
+inline double calculate_gflops(long long nnz, double seconds)
+{
+    if (seconds <= 0)
+        return 0;
+    return (2.0 * nnz) / (seconds * 1e9);
+}
