@@ -1,11 +1,11 @@
 #!/bin/bash
 
-N_VALUES=(28807 201649 432105 1008246 2880703 8642110 17284220)  
-NNZ_PER_ROW=30
-RANDOM_FACTORS=(0.0 0.5 1.0)
-MATRIX_PATH="/home/mengelsl/MA-bench-framework/matrices/spmv"
-
+MATRIX_PATH=$1
 mkdir -p "$MATRIX_PATH"
+
+N_VALUES=(28807 201649 432105 1440352 8642110)  
+NNZ_PER_ROW=30
+RANDOM_FACTORS=(0.0 1.0)
 
 for N in "${N_VALUES[@]}"; do
     for R in "${RANDOM_FACTORS[@]}"; do

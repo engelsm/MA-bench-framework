@@ -23,7 +23,7 @@ export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 if [ ! -f "$RESULTS_CSV" ]; then
-    echo "Matrix,Cores,NUMA_Policy,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches,Minor_Faults,Major_Faults,Peak_RSS" > "$RESULTS_CSV"
+    echo "Matrix,Cores,NUMA_Policy,Run,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches,Minor_Faults,Major_Faults,Peak_RSS" > "$RESULTS_CSV"
 fi
 
 TOTAL_STEPS=$(grep -vE '^(Matrix|#|$)' "$PLAN" | wc -l)
@@ -69,7 +69,7 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix"
     if [[ "$numa" == "membind" ]]; then
         NUMA_FLAG="--membind=$TARGET_NODE"
     elif [[ "$numa" == "interleave" ]]; then
-        NUMA_FLAG="--interleave=$TARGET_NODE"
+        NUMA_FLAG="--interleave=0,1"
     fi
 
     echo "=== [$CURRENT_STEP/$TOTAL_STEPS] $matrix | Cores: $cores | Policy: $numa ==="

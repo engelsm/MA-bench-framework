@@ -11,15 +11,14 @@ BINARY="/home/mengelsl/MA-bench-framework/build/spmv"
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-N_VALUES=(28807 201649 432105 1008246 2880703 8642110)
+N_VALUES=(28807 201649 432105 1440352 8642110)
 
 declare -A BASE_ITERS
 BASE_ITERS=(
     [28807]=1000
     [201649]=400
     [432105]=150
-    [1008246]=80
-    [2880703]=30
+    [1440352]=50
     [8642110]=10
 )
 
@@ -38,14 +37,7 @@ for file in "${TEST_FILES[@]}"; do
     for c in "${CORES[@]}"; do
         ITER=$(( B_ITER * ((c+1)/2) ))
 
-        POLICIES=("interleave")
-        
-        #if [ "$c" -eq 48 ]; then
-        #    POLICIES=("default" "interleave")
-        #else
-        #    POLICIES=("default")
-        #fi
-
+        POLICIES=("membind" "interleave")
         for pol in "${POLICIES[@]}"; do
             echo "-Threads: $c | Iter: $ITER | Policy: $pol"
             
@@ -55,15 +47,15 @@ for file in "${TEST_FILES[@]}"; do
                 TARGET_NODE=0,1
             fi
 
-            if [ "$pol" == "interleave" ]; then
-                NUMA_FLAG="--interleave=$TARGET_NODE"
-            else
+            if [ "$pol" == "membind" ]; then
                 NUMA_FLAG="--membind=$TARGET_NODE"
+            else
+                NUMA_FLAG="--interleave=0,1"
             fi
 
-            RES=$(setarch $(uname -m) -R numactl -C 0-$((c-1)) $NUMA_FLAG $BINARY "$file" "$ITER" 0 0 $c --cout)
+            RES=$(setarch $(uname -m) -R numactl -C 0-$((c-1)) $NUMA_FLAG $BINARY "$file" "$ITER" 0 0 $c $pol --cout)
 
-            T=$(echo "$RES" | cut -d',' -f6)
+            T=$(echo "$RES" | cut -d',' -f7)
 
             echo "$file_basename,$c,$pol,$ITER,$T" >> "$OUT"
             echo "Time: $T s"
