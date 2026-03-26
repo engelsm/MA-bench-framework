@@ -25,7 +25,7 @@ BASE_ITERS=(
 
 CORES=(1 8 24 48)
 
-echo "Matrix,Cores,Iterations,Runtime" > "$OUT"
+echo "Matrix,Cores,NUMA_Policy,Iterations,Runtime" > "$OUT"
 
 for file in "${TEST_FILES[@]}"; do
     file_basename=$(basename "$file")
@@ -37,20 +37,37 @@ for file in "${TEST_FILES[@]}"; do
 
     for c in "${CORES[@]}"; do
         ITER=$(( B_ITER * ((c+1)/2) ))
-        echo "-Threads: $c | Iter: $ITER"
-        if [ "$c" -le 24 ]; then
-            TARGET_NODE=0
-        elif [ "$c" -le 48 ]; then
-            TARGET_NODE=0,1
-        fi
-        NUMA_FLAG="--membind=$TARGET_NODE"
 
-        RES=$(setarch $(uname -m) -R numactl -C 0-$((c-1)) $NUMA_FLAG $BINARY "$file" "$ITER" 0 0 $c --cout)
+        POLICIES=("interleave")
+        
+        #if [ "$c" -eq 48 ]; then
+        #    POLICIES=("default" "interleave")
+        #else
+        #    POLICIES=("default")
+        #fi
 
-        T=$(echo "$RES" | cut -d',' -f6)
+        for pol in "${POLICIES[@]}"; do
+            echo "-Threads: $c | Iter: $ITER | Policy: $pol"
+            
+            if [ "$c" -le 24 ]; then
+                TARGET_NODE=0
+            else
+                TARGET_NODE=0,1
+            fi
 
-        echo "$file_basename,$c,$ITER,$T" >> "$OUT"
-        echo "Time: $T s"
+            if [ "$pol" == "interleave" ]; then
+                NUMA_FLAG="--interleave=$TARGET_NODE"
+            else
+                NUMA_FLAG="--membind=$TARGET_NODE"
+            fi
+
+            RES=$(setarch $(uname -m) -R numactl -C 0-$((c-1)) $NUMA_FLAG $BINARY "$file" "$ITER" 0 0 $c --cout)
+
+            T=$(echo "$RES" | cut -d',' -f6)
+
+            echo "$file_basename,$c,$pol,$ITER,$T" >> "$OUT"
+            echo "Time: $T s"
+        done
     done
 done
 

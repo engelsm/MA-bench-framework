@@ -17,13 +17,13 @@ PLAN="$BASE_DIR/benchmark/spmv/bench_plan.csv"
 MATRIX_DIR="$BASE_DIR/matrices/spmv"
 BINARY="$BASE_DIR/build/spmv"
 
-RUNS=10
+RUNS=15
 
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 if [ ! -f "$RESULTS_CSV" ]; then
-    echo "Matrix,Cores,Run,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches" > "$RESULTS_CSV"
+    echo "Matrix,Cores,NUMA_Policy,Iterations,IO_Time,SpMV_Time,SpMV_GFLOPS,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches,Minor_Faults,Major_Faults,Peak_RSS" > "$RESULTS_CSV"
 fi
 
 TOTAL_STEPS=$(grep -vE '^(Matrix|#|$)' "$PLAN" | wc -l)
@@ -43,14 +43,14 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix"
 
     ((CURRENT_STEP++))
 
-    CURRENT_RUNS=$(awk -F',' -v m="$matrix" -v c="$cores" '$1==m && $2==c {count++} END{print count+0}' "$RESULTS_CSV")
+    CURRENT_RUNS=$(awk -F',' -v m="$matrix" -v c="$cores" -v n="$numa" '$1==m && $2==c && $3==n {count++} END{print count+0}' "$RESULTS_CSV")
 
     if (( CURRENT_RUNS >= RUNS )); then
-        echo "Skipping $matrix | cores=$cores (already completed)"
+        echo "Skipping $matrix | cores=$cores | policy=$numa (already completed)"
         continue
     fi
 
-    EXTRA_SUBDIR="$EXTRA_DIR/${matrix%.*}_c${cores}"
+    EXTRA_SUBDIR="$EXTRA_DIR/${matrix%.*}_c${cores}_${numa}"
     mkdir -p "$EXTRA_SUBDIR"
     NUMA_LOG="$EXTRA_SUBDIR/numa.log"
     ITER_CSV="$EXTRA_SUBDIR/iter.csv"
@@ -60,25 +60,25 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix"
 
     CORE_RANGE="0-$(($cores - 1))"
 
-    if [[ "$numa" == "default" ]]; then
-        if [ "$cores" -le 24 ]; then
-            TARGET_NODE=0
-        elif [ "$cores" -le 48 ]; then
-            TARGET_NODE=0,1
-        fi
-        NUMA_FLAG="--membind=$TARGET_NODE"
-    elif [[ "$numa" == "interleave" ]]; then
-        NUMA_FLAG="--interleave=all"
+    if [ "$cores" -le 24 ]; then
+        TARGET_NODE=0
+    elif [ "$cores" -le 48 ]; then
+        TARGET_NODE=0,1
     fi
 
-    echo "=== [$CURRENT_STEP/$TOTAL_STEPS] $matrix | Cores: $cores ==="
+    if [[ "$numa" == "membind" ]]; then
+        NUMA_FLAG="--membind=$TARGET_NODE"
+    elif [[ "$numa" == "interleave" ]]; then
+        NUMA_FLAG="--interleave=$TARGET_NODE"
+    fi
+
+    echo "=== [$CURRENT_STEP/$TOTAL_STEPS] $matrix | Cores: $cores | Policy: $numa ==="
 
     for ((run_nr=CURRENT_RUNS+1; run_nr<=RUNS; run_nr++)); do
         
         echo -n "[$(date +%H:%M:%S)] Run $run_nr/$RUNS ... "
 
-
-        setarch $(uname -m) -R numactl -C $CORE_RANGE $NUMA_FLAG "$BINARY" "$FULL_MATRIX_PATH" "$iter" 0 "$run_nr" "$cores" "$RESULTS_CSV" "$ITER_CSV" &
+        setarch $(uname -m) -R numactl -C $CORE_RANGE $NUMA_FLAG "$BINARY" "$FULL_MATRIX_PATH" "$iter" 0 "$run_nr" "$cores" "$numa" "$RESULTS_CSV" "$ITER_CSV" &
         
         PID=$!
 
@@ -101,6 +101,4 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_iter || [ -n "$raw_matrix"
 done < "$PLAN"
 
 echo "Benchmark finished."
-echo "Results: $RESULTS_CSV"
-echo "Iterations: $ITER_CSV"
-echo "NUMA-Logs: $OUTDIR/numa_logs/"
+echo "Results directory: $OUTDIR"

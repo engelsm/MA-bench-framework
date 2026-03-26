@@ -25,10 +25,10 @@ int main(int argc, char **argv)
 	auto it = std::find(args.begin(), args.end(), "--cout");
 	bool use_cout = (it != args.end());
 
-	if (argc < 7)
+	if (argc < 8)
 	{
-		std::cerr << "Usage (File): " << argv[0] << " <matrix.bin> <iterations> <NUMA_opt 0/1> <run_id> <cores> <results_csv> <iter_csv>\n";
-		std::cerr << "Usage (Console): " << argv[0] << " <matrix.bin> <iterations> <NUMA_opt 0/1> <run_id> <cores> --cout\n";
+		std::cerr << "Usage (File): " << argv[0] << " <matrix.bin> <iterations> <NUMA_opt 0/1> <run_id> <cores> <numa_policy> <results_csv> <iter_csv>\n";
+		std::cerr << "Usage (Console): " << argv[0] << " <matrix.bin> <iterations> <NUMA_opt 0/1> <run_id> <cores> <numa_policy> --cout\n";
 		return 1;
 	}
 
@@ -37,13 +37,14 @@ int main(int argc, char **argv)
 	bool NUMA_optimize = (std::stoi(args[3]) != 0);
 	int run_id = std::stoi(args[4]);
 	int num_cores = std::stoi(args[5]);
+	std::string numa_policy = args[6];
 
 	std::string results_csv = "";
 	std::string iter_csv = "";
 	if (!use_cout)
 	{
-		results_csv = args[6];
-		iter_csv = args[7];
+		results_csv = args[7];
+		iter_csv = args[8];
 	}
 
 	std::string matrix_basename = std::filesystem::path(matrix_full_path).filename().string();
@@ -122,9 +123,13 @@ int main(int argc, char **argv)
 
 	long voluntary_switches = usage_end.ru_nvcsw - usage_start.ru_nvcsw;
 	long involuntary_switches = usage_end.ru_nivcsw - usage_start.ru_nivcsw;
+	long minor_faults = usage_end.ru_minflt - usage_start.ru_minflt;
+	long major_faults = usage_end.ru_majflt - usage_start.ru_majflt;
+	long peak_rss = usage_end.ru_maxrss;
 
 	std::string result_line = matrix_basename + "," +
 							  std::to_string(num_cores) + "," +
+							  numa_policy + "," +
 							  std::to_string(run_id) + "," +
 							  std::to_string(max_iterations) + "," +
 							  std::to_string(io_elapsed) + "," +
@@ -135,7 +140,10 @@ int main(int argc, char **argv)
 							  std::to_string(hw_vals[2]) + "," +
 							  std::to_string(hw_vals[3]) + "," +
 							  std::to_string(voluntary_switches) + "," +
-							  std::to_string(involuntary_switches) + "\n";
+							  std::to_string(involuntary_switches) + "," +
+							  std::to_string(minor_faults) + "," +
+							  std::to_string(major_faults) + "," +
+							  std::to_string(peak_rss) + "\n";
 
 	if (use_cout)
 	{
