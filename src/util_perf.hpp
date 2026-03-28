@@ -69,6 +69,16 @@ public:
 		return val;
 	}
 
+	void initialize_std_events()
+	{
+		// Events are defined in perf_event.h by the Linux kernel
+		add_event(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES, "cycles");
+		add_event(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS, "instructions");
+		add_event(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES, "cache_misses");
+		// https://stackoverflow.com/questions/61190033/how-to-measure-the-dtlb-hits-and-dtlb-misses-with-perf-event-open
+		add_event(PERF_TYPE_HW_CACHE, (PERF_COUNT_HW_CACHE_DTLB | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16)), "dtlb_load_misses");
+	}
+
 	// Destructor to close all event file descriptors when the PerfGroup object goes out of scope.
 	~PerfGroup()
 	{

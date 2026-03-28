@@ -12,8 +12,6 @@
 /**
  * CUSTOM BINARY CSR FORMAT
  *
- * TODO : explain the "why" behind this format (performance, parallelization, etc.)
- *
  * LAYOUT IN MEMORY
  * (With 4 Byte StorageIndex=int and 8 Byte Scalar=double)
  * Data is stored in three consecutive sections without any padding:

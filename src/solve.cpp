@@ -1,5 +1,6 @@
 #define EIGEN_USE_THREADS
 #include <omp.h>
+#include <sys/resource.h>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Spectra/SymEigsSolver.h>
@@ -9,14 +10,21 @@
 #include <string>
 #include <chrono>
 #include "util.hpp"
-#include <iomanip>
+#include "util_perf.hpp"
 
 // Apply patch for this file to work:
 // git -C external/eigen apply ../../eigen_bench_instrumentation.patch
 
+struct Results
+{
+	double spmv_time;
+	double mgmt_time;
+	int n_ops;
+};
+
 struct ManualOp
 {
-	// Spectra expects the following structure for the operator struct. See https://spectralib.org/doc/sparsesymmatprod_8h_source as an example.
+	// Spectra expects the following structure for the operator struct. See https://spectralib.org/doc/sparsesymmatprod_8h_source .
 	using Scalar = ::Scalar;
 
 	const CustomSparseMatrix &m_mat;
@@ -49,12 +57,6 @@ struct ManualOp
 	}
 };
 
-// We shall split t_mgmt into t_mgmt and t_omp_overhead in the evaluation scripts.
-void print_output(double t_spmv, double t_mgmt, int n_ops)
-{
-	std::cout << "EXTRA_DATA," << t_spmv << "," << t_mgmt << "," << n_ops << std::endl;
-}
-
 /* Every SpMV operation in a single solve process operates on the same matrix A, but a changing vector.
  * Thus, the sole time per SpMV operation might change over the course of the solving process for both
  * linear system solvers and eigenvalue solvers. (Testing showed increased times for the first few SpMVs,
@@ -72,7 +74,7 @@ void print_output(double t_spmv, double t_mgmt, int n_ops)
  */
 
 template <typename SolverType>
-void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
+Results run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 {
 	CustomVector b = CustomVector::Ones(A.rows());
 	CustomVector x;
@@ -83,8 +85,12 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 	solver.setMaxIterations(max_iter);
 	solver.setTolerance(0);
 
-	// Reset SpMV counter
+	// I added this variable to Eigen's internal namespace to track SpMV time in ConjugateGradient and BiCGSTAB. The value is updated in their respective source files.
+	// See MA-bench-framework/external/eigen/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h & MA-bench-framework/external/eigen/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h
 	Eigen::internal::linsolver_spmv_time = 0.0;
+
+	pg.start();
+	getrusage(RUSAGE_SELF, &usage_start);
 
 	double start_time = omp_get_wtime();
 	solver.compute(A);
@@ -92,27 +98,34 @@ void run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 	x = solver.solve(b);
 	double end_time = omp_get_wtime();
 
+	getrusage(RUSAGE_SELF, &usage_end);
+	pg.stop();
+
 	double t_total = end_time - start_time;
-	// I added this variable to Eigen's internal namespace to track SpMV time in ConjugateGradient and BiCGSTAB. The value is updated in their respective source files.
-	// See MA-bench-framework/external/eigen/Eigen/src/IterativeLinearSolvers/ConjugateGradient.h & MA-bench-framework/external/eigen/Eigen/src/IterativeLinearSolvers/BiCGSTAB.h
 	double t_spmv = Eigen::internal::linsolver_spmv_time;
 	double t_mgmt = t_total - t_spmv;
-	print_output(t_spmv, t_mgmt, solver.iterations());
+	return Results{t_spmv, t_mgmt, solver.iterations()};
 }
 
 // See Chapter 4 & 5 of http://li.mit.edu/Archive/Activities/Archive/CourseWork/Ju_Li/MITCourses/18.335/Doc/ARPACK/Lehoucq97.pdf for the theory behind IRAM/IRLM
 template <typename SolverType, typename OpType>
-void run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs)
+Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs)
 {
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
 
+	pg.start();
+	getrusage(RUSAGE_SELF, &usage_start);
 	double start_time = omp_get_wtime();
+
 	solver.init();
 	// We set the tolerance to 0.0 and limit the max iterations to ensure the solver does not exit early due to convergence. For benchmarking
 	// purposes, we want to measure a predictable number of iterations without the solver stopping when it finds a "good enough" solution.
 	solver.compute(Spectra::SortRule::LargestMagn, max_restarts, 0.0);
+
 	double end_time = omp_get_wtime();
+	getrusage(RUSAGE_SELF, &usage_end);
+	pg.stop();
 
 	double t_total = end_time - start_time;
 	double t_spmv = op.eigensolver_spmv_time;
@@ -120,7 +133,7 @@ void run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigva
 
 	//.num_iterations() would be the number of restarts.
 	//.num_operations() gives the total number of SpMV operations performed.
-	print_output(t_spmv, t_mgmt, solver.num_operations());
+	return Results{t_spmv, t_mgmt, solver.num_operations()};
 
 	/* The number of SpMV operations is a variable in Spectra called m_nmatop and counted with the op_counter variable.
 	 * * Definition of Variables:
@@ -156,49 +169,104 @@ int main(int argc, char **argv)
 {
 	if (argc < 3)
 	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode> <iter>\n";
+		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode> <iter> <arg1> <arg2> <arg3> <run_id> <cores> <numa_policy> <results_csv>\n";
 		return 1;
 	}
 
-	std::string filename = argv[1];
+	std::string matrix_full_path = argv[1];
 	std::string mode = argv[2];
 	// Linear solvers: Number of iterations ; Eigen solvers: Max number of restarts
-	int arg1 = (argc >= 4) ? std::stoi(argv[3]) : 100;
+	int arg1 = std::stoi(argv[3]);
 	// Linear solvers: unused ; Eigen solvers: Number of eigenvalues to compute
-	int arg2 = (argc >= 5) ? std::stoi(argv[4]) : 20;
+	int arg2 = std::stoi(argv[4]);
 	// Linear solvers: unused ; Eigen solvers: Number of basis vectors
-	int arg3 = (argc >= 6) ? std::stoi(argv[5]) : 20;
+	int arg3 = std::stoi(argv[5]);
 
-	// Set fixed seed for reproducibility
-	std::srand(42);
+	int run_id = std::stoi(argv[6]);
+	int num_cores = std::stoi(argv[7]);
+	std::string numa_policy = argv[8];
+	std::string results_csv = argv[9];
 
-	CustomSparseMatrix A = load_binary_matrix(filename, false);
+	std::string matrix_basename = std::filesystem::path(matrix_full_path).filename().string();
+
+	srand(42);
+
+	CustomSparseMatrix A = load_binary_matrix(matrix_full_path, false);
+	Results r;
+
+	PerfGroup pg;
+	pg.initialize_std_events();
+	struct rusage usage_start, usage_end;
 
 	if (mode == "cg")
 	{
 		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
-		run_linear_solver<Solver>(A, arg1);
+		r = run_linear_solver<Solver>(A, arg1);
 	}
 	else if (mode == "bicgstab")
 	{
 		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
 		// does 2 spmv per iteration
-		run_linear_solver<Solver>(A, arg1);
+		r = run_linear_solver<Solver>(A, arg1);
 	}
 	else if (mode == "lanczos") // IRLM
 	{
 		using Solver = Spectra::SymEigsSolver<ManualOp>;
-		run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
+		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
 	}
 	else if (mode == "arnoldi") // IRAM
 	{
 		using Solver = Spectra::GenEigsSolver<ManualOp>;
-		run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
+		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
 	}
 	else
 	{
 		std::cerr << "Unknown mode: " << mode << std::endl;
 		return 1;
+	}
+
+	std::vector<long long> hw_vals;
+	for (auto &e : pg.events)
+	{
+		hw_vals.push_back(pg.get_value(e.fd));
+	}
+
+	long voluntary_switches = usage_end.ru_nvcsw - usage_start.ru_nvcsw;
+	long involuntary_switches = usage_end.ru_nivcsw - usage_start.ru_nivcsw;
+	long minor_faults = usage_end.ru_minflt - usage_start.ru_minflt;
+	long major_faults = usage_end.ru_majflt - usage_start.ru_majflt;
+	long peak_rss = usage_end.ru_maxrss;
+
+	std::string result_line = matrix_basename + "," +
+							  std::to_string(num_cores) + "," +
+							  numa_policy + "," +
+							  std::to_string(run_id) + "," +
+							  std::to_string(arg1) + "," +
+							  std::to_string(arg2) + "," +
+							  std::to_string(arg3) + "," +
+							  std::to_string(r.spmv_time) + "," +
+							  std::to_string(r.mgmt_time) + "," +
+							  std::to_string(r.n_ops) + "," +
+							  std::to_string(r.n_ops) + "," +
+							  std::to_string(hw_vals[0]) + "," +
+							  std::to_string(hw_vals[1]) + "," +
+							  std::to_string(hw_vals[2]) + "," +
+							  std::to_string(hw_vals[3]) + "," +
+							  std::to_string(voluntary_switches) + "," +
+							  std::to_string(involuntary_switches) + "," +
+							  std::to_string(minor_faults) + "," +
+							  std::to_string(major_faults) + "," +
+							  std::to_string(peak_rss) + "\n";
+
+	std::ofstream stats_file(results_csv, std::ios::app);
+	if (stats_file.is_open())
+	{
+		stats_file << result_line;
+		stats_file.close();
+	}
+	else
+	{
+		std::cerr << "Error: Could not open results_csv: " << results_csv << "\n";
 	}
 
 	return 0;

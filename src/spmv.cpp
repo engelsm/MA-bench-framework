@@ -22,6 +22,7 @@ int main(int argc, char **argv)
 {
 	std::vector<std::string> args(argv, argv + argc);
 
+	// The --cout flag is used for debugging purposes.
 	auto it = std::find(args.begin(), args.end(), "--cout");
 	bool use_cout = (it != args.end());
 
@@ -84,12 +85,7 @@ int main(int argc, char **argv)
 	iter_results.reserve(max_iterations);
 
 	PerfGroup pg;
-	// Events are defined in perf_event.h by the Linux kernel
-	pg.add_event(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES, "cycles");
-	pg.add_event(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS, "instructions");
-	pg.add_event(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES, "cache_misses");
-	// https://stackoverflow.com/questions/61190033/how-to-measure-the-dtlb-hits-and-dtlb-misses-with-perf-event-open
-	pg.add_event(PERF_TYPE_HW_CACHE, (PERF_COUNT_HW_CACHE_DTLB | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16)), "dtlb_load_misses");
+	pg.initialize_std_events();
 
 	struct rusage usage_start, usage_end;
 

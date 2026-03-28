@@ -21,7 +21,7 @@ set(STATIC_LIBS
 
 # 1. STREAM
 add_executable(stream src/stream.c)
-target_compile_options(stream PRIVATE -mcmodel=medium)
+target_compile_options(stream PRIVATE -O -mcmodel=medium)
 target_compile_definitions(stream PRIVATE STREAM_ARRAY_SIZE=430080000 NTIMES=100)
 target_link_libraries(stream PRIVATE ${STATIC_LIBS})
 set_target_properties(stream PROPERTIES LINK_FLAGS "-nodefaultlibs")
