@@ -167,14 +167,20 @@ Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_ei
 
 int main(int argc, char **argv)
 {
-	if (argc < 3)
+	std::vector<std::string> args(argv, argv + argc);
+
+	auto it = std::find(args.begin(), args.end(), "--cout");
+	bool use_cout = (it != args.end());
+
+	if (argc < 9)
 	{
-		std::clog << "Usage: " << argv[0] << " <matrix.dat> <mode> <iter> <arg1> <arg2> <arg3> <run_id> <cores> <numa_policy> <results_csv>\n";
+		std::clog << "Usage (File): " << argv[0] << " <matrix.dat> <algo> <arg1> <arg2> <arg3> <run_id> <cores> <numa_policy> <results_csv>\n";
+		std::clog << "Usage (Console): " << argv[0] << " <matrix.dat> <algo> <arg1> <arg2> <arg3> <run_id> <cores> <numa_policy> --cout\n";
 		return 1;
 	}
 
 	std::string matrix_full_path = argv[1];
-	std::string mode = argv[2];
+	std::string algo = argv[2];
 	// Linear solvers: Number of iterations ; Eigen solvers: Max number of restarts
 	int arg1 = std::stoi(argv[3]);
 	// Linear solvers: unused ; Eigen solvers: Number of eigenvalues to compute
@@ -185,7 +191,11 @@ int main(int argc, char **argv)
 	int run_id = std::stoi(argv[6]);
 	int num_cores = std::stoi(argv[7]);
 	std::string numa_policy = argv[8];
-	std::string results_csv = argv[9];
+	std::string results_csv = "";
+	if (!use_cout)
+	{
+		results_csv = argv[9];
+	}
 
 	std::string matrix_basename = std::filesystem::path(matrix_full_path).filename().string();
 
@@ -198,30 +208,30 @@ int main(int argc, char **argv)
 	pg.initialize_std_events();
 	struct rusage usage_start, usage_end;
 
-	if (mode == "cg")
+	if (algo == "cg")
 	{
 		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
 		r = run_linear_solver<Solver>(A, arg1);
 	}
-	else if (mode == "bicgstab")
+	else if (algo == "bicgstab")
 	{
 		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
 		// does 2 spmv per iteration
 		r = run_linear_solver<Solver>(A, arg1);
 	}
-	else if (mode == "lanczos") // IRLM
+	else if (algo == "lanczos") // IRLM
 	{
 		using Solver = Spectra::SymEigsSolver<ManualOp>;
 		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
 	}
-	else if (mode == "arnoldi") // IRAM
+	else if (algo == "arnoldi") // IRAM
 	{
 		using Solver = Spectra::GenEigsSolver<ManualOp>;
 		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
 	}
 	else
 	{
-		std::cerr << "Unknown mode: " << mode << std::endl;
+		std::cerr << "Unknown algo: " << algo << std::endl;
 		return 1;
 	}
 
@@ -240,13 +250,13 @@ int main(int argc, char **argv)
 	std::string result_line = matrix_basename + "," +
 							  std::to_string(num_cores) + "," +
 							  numa_policy + "," +
-							  std::to_string(run_id) + "," +
+							  algo + "," +
 							  std::to_string(arg1) + "," +
 							  std::to_string(arg2) + "," +
 							  std::to_string(arg3) + "," +
+							  std::to_string(run_id) + "," +
 							  std::to_string(r.spmv_time) + "," +
 							  std::to_string(r.mgmt_time) + "," +
-							  std::to_string(r.n_ops) + "," +
 							  std::to_string(r.n_ops) + "," +
 							  std::to_string(hw_vals[0]) + "," +
 							  std::to_string(hw_vals[1]) + "," +
@@ -258,15 +268,22 @@ int main(int argc, char **argv)
 							  std::to_string(major_faults) + "," +
 							  std::to_string(peak_rss) + "\n";
 
-	std::ofstream stats_file(results_csv, std::ios::app);
-	if (stats_file.is_open())
+	if (use_cout)
 	{
-		stats_file << result_line;
-		stats_file.close();
+		std::cout << result_line;
 	}
 	else
 	{
-		std::cerr << "Error: Could not open results_csv: " << results_csv << "\n";
+		std::ofstream stats_file(results_csv, std::ios::app);
+		if (stats_file.is_open())
+		{
+			stats_file << result_line;
+			stats_file.close();
+		}
+		else
+		{
+			std::cerr << "Error: Could not open results_csv: " << results_csv << "\n";
+		}
 	}
 
 	return 0;

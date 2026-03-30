@@ -1,48 +1,29 @@
 #!/bin/bash
 
-# Konfiguration
-STREAM_ARRAY_SIZE=430080000
-NTIMES=100
-CSV_FILE="stream_results.csv"
-THREADS_LIST=(24 48 96)
+ml tools/numactl/2.0.19-GCCcore-14.2.0
+
+CSV_FILE="stream_out.csv"
+THREADS_LIST=(48)
 
 ENV=$1
-BOOST=$2
-NUMA=$3
 
 if [ ! -f "$CSV_FILE" ]; then
-    echo "Threads,Env,Boost,Numa,Function,BestRate_MBs,AvgTime,MinTime,MaxTime" > "$CSV_FILE"
+    echo "Threads,Env,Function,BestRate_MBs,AvgTime,MinTime,MaxTime" > "$CSV_FILE"
 fi
 
 for N in "${THREADS_LIST[@]}"; do
-    echo "== Running STREAM with $N threads ($ENV, Numa: $NUMA) =="
+    echo "== Running STREAM with $N threads ($ENV) =="
     
-    export OMP_NUM_THREADS=$N
-    export OMP_PROC_BIND=close
-    export OMP_PLACES=cores
+   export OMP_NUM_THREADS=$N
     
-    if [ "$ENV" == "native" ]; then
-        if [ "$NUMA" == "interleave" ]; then
-            case $N in
-                24) NODES="0" ;;
-                48) NODES="0,1" ;;
-                96) NODES="0,1,2,3" ;;
-            esac
-            CMD="numactl -C 0-$((N-1)) --interleave=$NODES ./stream.out"
-        else
-            # Standard: Nur CPU-Binding, Memory bleibt lokal (default)
-            CMD="numactl -C 0-$((N-1)) ./stream.out"
-        fi
-    else
-        # In der VM (SEV/SME) lassen wir das OS/Hypervisor entscheiden
-        CMD="./stream.out"
-    fi
+   OUT=$(setarch $(uname -m) -R numactl -C 0-47 --membind=0,1 /home/mengelsl/MA-bench-framework/build/stream)
 
-    echo "Executing: $CMD"
-    $CMD | awk -v threads="$N" -v env="$ENV" -v boost="$BOOST" -v numa="$NUMA" '
+    echo "$OUT" | awk -F'[[:space:]]+' -v threads="$N" -v env="$ENV" '
         /Copy:|Scale:|Add:|Triad:/ {
-            sub(/:/, "", $1);
-            print threads "," env "," boost "," numa "," $1 "," $2 "," $3 "," $4 "," $5
+            # $1: Name (z.B. Copy:), $2: Rate, $3: Avg, $4: Min, $5: Max
+            name = $1;
+            sub(/:/, "", name);
+            print threads "," env "," name "," $2 "," $3 "," $4 "," $5
         }' >> "$CSV_FILE"
 done
 

@@ -29,7 +29,7 @@ set_target_properties(stream PROPERTIES LINK_FLAGS "-nodefaultlibs")
 # 2. SPMV & 3. SOLVE & helpers
 set(PROGRAMS 
     spmv
-    solve
+    krylov
     #preprocessmatrix
     synthgen
 )
