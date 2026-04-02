@@ -8,7 +8,8 @@
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <iostream>
 #include <string>
-#include <chrono>
+#include <fstream>
+#include <filesystem>
 #include "util.hpp"
 #include "util_perf.hpp"
 
@@ -19,7 +20,7 @@ struct Results
 {
 	double spmv_time;
 	double mgmt_time;
-	int n_ops;
+	long long n_ops;
 };
 
 struct ManualOp
@@ -74,7 +75,7 @@ struct ManualOp
  */
 
 template <typename SolverType>
-Results run_linear_solver(const CustomSparseMatrix &A, int max_iter)
+Results run_linear_solver(const CustomSparseMatrix &A, int max_iter, PerfGroup &pg, rusage &usage_start, rusage &usage_end)
 {
 	CustomVector b = CustomVector::Ones(A.rows());
 	CustomVector x;
@@ -109,7 +110,7 @@ Results run_linear_solver(const CustomSparseMatrix &A, int max_iter)
 
 // See Chapter 4 & 5 of http://li.mit.edu/Archive/Activities/Archive/CourseWork/Ju_Li/MITCourses/18.335/Doc/ARPACK/Lehoucq97.pdf for the theory behind IRAM/IRLM
 template <typename SolverType, typename OpType>
-Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs)
+Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs, PerfGroup &pg, rusage &usage_start, rusage &usage_end)
 {
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
@@ -211,23 +212,23 @@ int main(int argc, char **argv)
 	if (algo == "cg")
 	{
 		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
-		r = run_linear_solver<Solver>(A, arg1);
+		r = run_linear_solver<Solver>(A, arg1, pg, usage_start, usage_end);
 	}
 	else if (algo == "bicgstab")
 	{
 		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
 		// does 2 spmv per iteration
-		r = run_linear_solver<Solver>(A, arg1);
+		r = run_linear_solver<Solver>(A, arg1, pg, usage_start, usage_end);
 	}
 	else if (algo == "lanczos") // IRLM
 	{
 		using Solver = Spectra::SymEigsSolver<ManualOp>;
-		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
+		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3, pg, usage_start, usage_end);
 	}
 	else if (algo == "arnoldi") // IRAM
 	{
 		using Solver = Spectra::GenEigsSolver<ManualOp>;
-		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3);
+		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3, pg, usage_start, usage_end);
 	}
 	else
 	{

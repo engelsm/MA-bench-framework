@@ -9,18 +9,18 @@ fi
 
 BASE_DIR="$HOME/MA-bench-framework"
 MATRIX_DIR="$BASE_DIR/matrices/spmv"
-BINARY="$BASE_DIR/build/spmv_deep_analysis"
+BINARY="$BASE_DIR/build/spmv"
 
-CSV_A="$BASE_DIR/benchmark/spmv_deep_analysis/${ENV}a.csv"
-CSV_B="$BASE_DIR/benchmark/spmv_deep_analysis/${ENV}b.csv"
-DEBUG_LOG="$BASE_DIR/benchmark/spmv_deep_analysis/${ENV}_numa_details.log"
+CSV_A="$BASE_DIR/benchmark/spmv/${ENV}a.csv"
+CSV_B="$BASE_DIR/benchmark/spmv/${ENV}b.csv"
+DEBUG_LOG="$BASE_DIR/benchmark/spmv/${ENV}_numa_details.log"
 
-MATRICES=(0-0_N1008246.bin) 
+MATRICES=(0-0_N201649.bin) 
 CORE_CONFIGS=(24)
 RUNS=15
 ITER=1000
 
-mkdir -p "$BASE_DIR/benchmark/spmv_deep_analysis"
+mkdir -p "$BASE_DIR/benchmark/spmv_numa_investigation"
 
 echo "Matrix,Cores,Run,Type,Iteration,Runtime,Gflops" > "$CSV_A"
 echo "Matrix,Cores,Run,Type,Iteration,Runtime,Gflops" > "$CSV_B"
@@ -45,13 +45,13 @@ for MATRIX_FILE in "${MATRICES[@]}"; do
         for ((RUN_ID=1; RUN_ID<=RUNS; RUN_ID++)); do
             echo "[$(date +%H:%M:%S)] Run $RUN_ID | Matrix: $MATRIX_FILE | Cores: $CORES"
 
-            numactl --physcpubind=0-$((CORES - 1)) --membind=$M_A $BINARY "$MATRIX_PATH" $ITER 0 $RUN_ID $CORES . > "${CSV_A}.tmp" &
+            numactl --physcpubind=0-$((CORES - 1)) --membind=$M_A $BINARY "$MATRIX_PATH" $ITER 0 $RUN_ID $CORES "membind" --cout > "${CSV_A}.tmp" &
             PID_A=$!
 
-            numactl --physcpubind=$((CORES))-$((2 * CORES - 1)) --membind=$M_B $BINARY "$MATRIX_PATH" $ITER 0 $RUN_ID $CORES . > "${CSV_B}.tmp" &
+            numactl --physcpubind=$((CORES))-$((2 * CORES - 1)) --membind=$M_B $BINARY "$MATRIX_PATH" $ITER 0 $RUN_ID $CORES "membind" --cout > "${CSV_B}.tmp" &
             PID_B=$!
 
-            sleep 1.2
+            sleep 1
             {
                 echo "--- RUN $RUN_ID | $MATRIX_FILE ---"
                 

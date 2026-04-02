@@ -30,8 +30,9 @@ set_target_properties(stream PROPERTIES LINK_FLAGS "-nodefaultlibs")
 set(PROGRAMS 
     spmv
     krylov
-    #preprocessmatrix
+    preprocess_matrix
     synthgen
+    IO_Performance
 )
 
 foreach(PROG ${PROGRAMS})
@@ -45,3 +46,17 @@ foreach(PROG ${PROGRAMS})
         ${EXT_DIR}/eigen
     )
 endforeach()
+
+# 4. DYNAMIC SPMV
+add_executable(spmv_DYNAMIC src/spmv.cpp)
+
+target_link_libraries(spmv_DYNAMIC PRIVATE OpenMP::OpenMP_CXX)
+
+target_include_directories(spmv_DYNAMIC PRIVATE 
+    src 
+    ${EXT_DIR}/spectra/include 
+    ${EXT_DIR}/fast_matrix_market/include 
+    ${EXT_DIR}/eigen
+)
+
+target_compile_options(spmv_DYNAMIC PRIVATE -march=native)
