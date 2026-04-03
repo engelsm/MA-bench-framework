@@ -1,57 +1,81 @@
 #!/bin/bash
 
-OUT="itertest_krylov_fixed.csv"
+ml tools/numactl/2.0.19-GCCcore-14.2.0
 
+BASE_DIR="/home/mengelsl/MA-bench-framework/matrices/binary_spmc"
+SUBDIRS=("symmetric" "unsymmetric")
+OUT="itertest.csv"
+BINARY="/home/mengelsl/MA-bench-framework/build/krylov"
+
+export OMP_PROC_BIND=close
+export OMP_PLACES=cores
+
+CORES=(1 8 24 48)
 FIXED_OPS_LINEAR=60   
 FIXED_RESTARTS_EIGEN=5 
-
 N_EIGVALS=2 
 N_BVECS=10
 
-CORES=(1 4 8 24 48 96)
-ALGOS=("cg" "bicgstab" "lanczos" "arnoldi")
+echo "Matrix,Type,Cores,NUMA_Policy,Algo,Arg1,Arg2,Arg3,SpMV_Time,Mgmt_Time,N_OPS" > "$OUT"
 
-echo "Algo,Matrix,Cores,Arg1,Arg2,Arg3,SpMV_Time,Mgmt_Time,N_OPS" > "$OUT"
+for subdir in "${SUBDIRS[@]}"; do
+    MATRIX_DIR="$BASE_DIR/$subdir"
+    
+    if [ ! -d "$MATRIX_DIR" ]; then continue; fi
+    TEST_FILES=($(ls $MATRIX_DIR/*.bin 2>/dev/null))
 
-for algo in "${ALGOS[@]}"; do
-    if [[ "$algo" == "cg" || "$algo" == "lanczos" ]]; then
-        DIRS=("symmetric")
+    if [ "$subdir" == "symmetric" ]; then
+        CURRENT_ALGOS=("cg" "lanczos")
     else
-        DIRS=("symmetric" "unsymmetric")
+        CURRENT_ALGOS=("bicgstab" "arnoldi")
     fi
 
-    for sub_dir in "${DIRS[@]}"; do
-        current_full_path="/home/mengelsl/MA-bench-framework/matrices/binary_spmc/$sub_dir"
-        for file in "$current_full_path"/*.bin; do
-            [ -f "$file" ] || continue
-            FILE_REF="${sub_dir}/$(basename "$file")"
+    for file in "${TEST_FILES[@]}"; do
+        file_basename=$(basename "$file")
+
+        for algo in "${CURRENT_ALGOS[@]}"; do
+            if [[ "$algo" == "cg" || "$algo" == "bicgstab" ]]; then
+                ARG1=$FIXED_OPS_LINEAR
+                ARG2=0
+                ARG3=0
+            else
+                ARG1=$FIXED_RESTARTS_EIGEN
+                ARG2="$N_EIGVALS" 
+                ARG3="$N_BVECS"
+            fi
 
             for c in "${CORES[@]}"; do
-                if [[ "$algo" == "cg" || "$algo" == "bicgstab" ]]; then
-                    ARG1=$FIXED_OPS_LINEAR
-                    ARG2=0
-                    ARG3=0
-                else
-                    ARG1=$FIXED_RESTARTS_EIGEN
-                    ARG2="$N_EIGVALS" 
-                    ARG3="$N_BVECS"
-                fi
+                POLICIES=("membind" "interleave")
+                for pol in "${POLICIES[@]}"; do
+                        echo "-Threads: $c | Policy: $pol | Algo: $algo | File: $file_basename"
 
-                export OMP_NUM_THREADS=$c
-                export OMP_PROC_BIND=close
-                export OMP_PLACES=cores
-                
-                RES=$(/home/mengelsl/MA-bench-framework/build/solve "$file" "$algo" "$ARG1" "$ARG2" "$ARG3" | grep "EXTRA_DATA")
+                    CORE_RANGE="0-$((c-1))"
+                    
+                    if [ "$c" -le 24 ]; then
+                        TARGET_NODE=0
+                    else
+                        TARGET_NODE=0,1
+                    fi
 
-                T_SPMV=$(echo "$RES" | cut -d',' -f2)
-                T_MGMT=$(echo "$RES" | cut -d',' -f3)
-                N_OPS=$(echo "$RES" | cut -d',' -f4)
+                    if [ "$pol" == "membind" ]; then
+                        NUMA_FLAG="--membind=$TARGET_NODE"
+                    else
+                        NUMA_FLAG="--interleave=0,1"
+                    fi
 
-                echo "$algo,$FILE_REF,$c,$ARG1,$ARG2,$ARG3,$T_SPMV,$T_MGMT,$N_OPS" >> "$OUT"
-                
-                TOTAL_TIME=$(awk "BEGIN {print $T_SPMV + $T_MGMT}")
-                echo "     Cores $c Done: ${TOTAL_TIME}s total (SpMV: ${T_SPMV}s, Mgmt: ${T_MGMT}s)"
+                    RES=$(setarch $(uname -m) -R numactl -C $CORE_RANGE $NUMA_FLAG "$BINARY" "$file" "$algo" "$ARG1" "$ARG2" "$ARG3" 0 "$c" "$pol" --cout) 
+
+                    T_SPMV=$(echo "$RES" | cut -d',' -f9)
+                    T_MGMT=$(echo "$RES" | cut -d',' -f10)
+                    N_OPS=$(echo "$RES" | cut -d',' -f11)
+
+                    echo "$file_basename,$subdir,$c,$pol,$algo,$ARG1,$ARG2,$ARG3,$T_SPMV,$T_MGMT,$N_OPS" >> "$OUT"
+
+                    echo "Done: $file_basename ($subdir) | Algo: $algo | Cores: $c | Policy: $pol"
+                done
             done
         done
     done
 done
+
+echo "Benchmark abgeschlossen. Ergebnisse in $OUT"

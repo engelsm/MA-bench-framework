@@ -11,7 +11,7 @@ mkdir -p "$OUTDIR"
 
 RESULTS_CSV="$OUTDIR/results.csv"
 PLAN="$BASE_DIR/benchmark/krylov/bench_plan.csv"
-MATRIX_DIR="$BASE_DIR/matrices/krylov"
+MATRIX_BASE_DIR="$BASE_DIR/matrices/binary_spmc"
 BINARY="$BASE_DIR/build/krylov"
 
 RUNS=15
@@ -20,7 +20,7 @@ export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 if [ ! -f "$RESULTS_CSV" ]; then
-    echo "Matrix,Cores,NUMA_Policy,Arg1,Arg2,Arg3,Run,SpMV_Time,Mgmt_Time,N_Ops,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches,Minor_Faults,Major_Faults,Peak_RSS" > "$RESULTS_CSV"
+    echo "Matrix,Cores,NUMA_Policy,Algo,Arg1,Arg2,Arg3,Run,SpMV_Time,Mgmt_Time,N_Ops,Perf_Cycles,Perf_Instructions,Perf_CacheMisses,Perf_dTLBMisses,Voluntary_CtxSwitches,Involuntary_CtxSwitches,Minor_Faults,Major_Faults,Peak_RSS" > "$RESULTS_CSV"
 fi
 
 TOTAL_STEPS=$(grep -vE '^(Matrix|#|$)' "$PLAN" | wc -l)
@@ -50,7 +50,11 @@ while IFS=, read -r raw_matrix raw_cores raw_numa raw_algo raw_arg1 raw_arg2 raw
         continue
     fi
 
-    FULL_MATRIX_PATH="$MATRIX_DIR/$matrix"
+    if [[ "$algo" == "cg" || "$algo" == "lanczos" ]]; then
+        FULL_MATRIX_PATH="$MATRIX_BASE_DIR/symmetric/$matrix"
+    else
+        FULL_MATRIX_PATH="$MATRIX_BASE_DIR/unsymmetric/$matrix"
+    fi
 
     CORE_RANGE="0-$(($cores - 1))"
 
