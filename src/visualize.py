@@ -7,7 +7,6 @@ import struct
 import os
 import argparse
 import glob
-import math
 
 
 def load_matrix_data(filename):
@@ -24,50 +23,57 @@ def main():
     parser.add_argument("-d", "--indir", required=True)
     parser.add_argument("-o", "--outdir", required=True)
     parser.add_argument("-s", "--size", type=float, default=1.0)
-    parser.add_argument("--name", default="matrix_comparison.png")
     args = parser.parse_args()
 
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
     files = sorted(glob.glob(os.path.join(args.indir, "*.bin")))
-    num_files = len(files)
 
-    if num_files == 0:
+    if not files:
         print("No files found.")
         return
 
-    cols = 4
-    rows = math.ceil(num_files / cols)
-
-    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 5 * rows))
-    axes = np.array(axes).flatten()
-
-    for i, file in enumerate(files):
-        print(f"Load {file}...")
+    for file in files:
+        print(f"Processing {file}...")
         n_r, n_c, nnz, idx, row_idx = load_matrix_data(file)
 
-        ax = axes[i]
+        fig, ax = plt.subplots(figsize=(5, 5))
+
         if n_r <= 5000:
             ax.scatter(
-                idx, row_idx, s=args.size, c="black", marker="s", edgecolors="none"
+                idx, row_idx,
+                s=args.size,
+                c="black",
+                marker="s",
+                edgecolors="none"
             )
         else:
             ax.hist2d(idx, row_idx, bins=150, cmap="Greys")
 
-        ax.set_title(f"{os.path.basename(file)}\nN={n_r}, NNZ={nnz}")
+        # No ticks, no labels
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # Clean border
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(0.8)
+
+        # Proper limits
         ax.set_xlim(0, n_c)
         ax.set_ylim(n_r, 0)
         ax.set_aspect("equal")
-        ax.grid(True, linestyle=":", alpha=0.4)
 
-    for j in range(i + 1, len(axes)):
-        axes[j].axis("off")
+        plt.tight_layout()
 
-    plt.tight_layout()
-    output_path = os.path.join(args.outdir, args.name)
-    plt.savefig(output_path, dpi=150)
-    print(f"\nDone: {output_path}")
+        # Save as PNG (high resolution)
+        base = os.path.splitext(os.path.basename(file))[0]
+        out_path = os.path.join(args.outdir, f"{base}.png")
+        plt.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        print(f"Saved: {out_path}")
 
 
 if __name__ == "__main__":

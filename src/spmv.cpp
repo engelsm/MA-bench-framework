@@ -109,6 +109,7 @@ int main(int argc, char **argv)
 	double total_spmv_time = 0;
 	for (const auto &res : iter_results)
 		total_spmv_time += res.elapsed;
+	//BUG: CHANGE GFLOPS
 	double avg_gflops = calculate_gflops(A.nonZeros(), total_spmv_time);
 
 	std::vector<long long> hw_vals;

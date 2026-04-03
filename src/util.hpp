@@ -79,7 +79,6 @@ inline int write_binary_matrix(const std::string &mtx_path, const std::string &b
 // NUMA_optimize=true only works as intended if the process calling this function has a NUMA policy that allocates memory locally (e.g., not interleaved,etc.)
 inline CustomSparseMatrix load_binary_matrix(const std::string &bin_path, bool NUMA_optimize)
 {
-    // Potentially improve alignment as Eigen apparently only guarantees 16-byte (not 64) alignment, which sucks for AVX.
     std::ifstream in(bin_path, std::ios::binary);
     if (!in)
     {
