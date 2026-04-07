@@ -75,7 +75,7 @@ struct ManualOp
  */
 
 template <typename SolverType>
-Results run_linear_solver(const CustomSparseMatrix &A, int max_iter, PerfGroup &pg, rusage &usage_start, rusage &usage_end)
+Results run_linear_solver(const CustomSparseMatrix &A, int max_iter, PerfGroup &pg)
 {
 	CustomVector b = CustomVector::Ones(A.rows());
 	CustomVector x;
@@ -91,7 +91,6 @@ Results run_linear_solver(const CustomSparseMatrix &A, int max_iter, PerfGroup &
 	Eigen::internal::linsolver_spmv_time = 0.0;
 
 	pg.start();
-	getrusage(RUSAGE_SELF, &usage_start);
 
 	double start_time = omp_get_wtime();
 	solver.compute(A);
@@ -99,7 +98,6 @@ Results run_linear_solver(const CustomSparseMatrix &A, int max_iter, PerfGroup &
 	x = solver.solve(b);
 	double end_time = omp_get_wtime();
 
-	getrusage(RUSAGE_SELF, &usage_end);
 	pg.stop();
 
 	double t_total = end_time - start_time;
@@ -110,13 +108,12 @@ Results run_linear_solver(const CustomSparseMatrix &A, int max_iter, PerfGroup &
 
 // See Chapter 4 & 5 of http://li.mit.edu/Archive/Activities/Archive/CourseWork/Ju_Li/MITCourses/18.335/Doc/ARPACK/Lehoucq97.pdf for the theory behind IRAM/IRLM
 template <typename SolverType, typename OpType>
-Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs, PerfGroup &pg, rusage &usage_start, rusage &usage_end)
+Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_eigvals, int n_bvecs, PerfGroup &pg)
 {
 	OpType op(A);
 	SolverType solver(op, n_eigvals, n_bvecs);
 
 	pg.start();
-	getrusage(RUSAGE_SELF, &usage_start);
 	double start_time = omp_get_wtime();
 
 	solver.init();
@@ -125,7 +122,6 @@ Results run_eigen_solver(const CustomSparseMatrix &A, int max_restarts, int n_ei
 	solver.compute(Spectra::SortRule::LargestMagn, max_restarts, 0.0);
 
 	double end_time = omp_get_wtime();
-	getrusage(RUSAGE_SELF, &usage_end);
 	pg.stop();
 
 	double t_total = end_time - start_time;
@@ -175,8 +171,8 @@ int main(int argc, char **argv)
 
 	if (argc < 9)
 	{
-		std::clog << "Usage (File): " << argv[0] << " <matrix.dat> <algo> <arg1> <arg2> <arg3> <run_id> <cores> <numa_policy> <results_csv>\n";
-		std::clog << "Usage (Console): " << argv[0] << " <matrix.dat> <algo> <arg1> <arg2> <arg3> <run_id> <cores> <numa_policy> --cout\n";
+		std::clog << "Usage (File): " << argv[0] << " <matrix.dat> <algo> <arg1> <arg2> <arg3> <run_id> <cores> <process_numa_policy> <results_csv>\n";
+		std::clog << "Usage (Console): " << argv[0] << " <matrix.dat> <algo> <arg1> <arg2> <arg3> <run_id> <cores> <process_numa_policy> --cout\n";
 		return 1;
 	}
 
@@ -191,7 +187,7 @@ int main(int argc, char **argv)
 
 	int run_id = std::stoi(argv[6]);
 	int num_cores = std::stoi(argv[7]);
-	std::string numa_policy = argv[8];
+	std::string process_numa_policy = argv[8];
 	std::string results_csv = "";
 	if (!use_cout)
 	{
@@ -202,33 +198,32 @@ int main(int argc, char **argv)
 
 	srand(42);
 
-	CustomSparseMatrix A = load_binary_matrix(matrix_full_path, false);
+	CustomSparseMatrix A = load_binary_matrix(matrix_full_path);
 	Results r;
 
 	PerfGroup pg;
 	pg.initialize_std_events();
-	struct rusage usage_start, usage_end;
 
 	if (algo == "cg")
 	{
 		using Solver = Eigen::ConjugateGradient<CustomSparseMatrix, Eigen::Lower | Eigen::Upper, Eigen::IdentityPreconditioner>;
-		r = run_linear_solver<Solver>(A, arg1, pg, usage_start, usage_end);
+		r = run_linear_solver<Solver>(A, arg1, pg);
 	}
 	else if (algo == "bicgstab")
 	{
 		using Solver = Eigen::BiCGSTAB<CustomSparseMatrix, Eigen::IdentityPreconditioner>;
 		// does 2 spmv per iteration
-		r = run_linear_solver<Solver>(A, arg1, pg, usage_start, usage_end);
+		r = run_linear_solver<Solver>(A, arg1, pg);
 	}
 	else if (algo == "lanczos") // IRLM
 	{
 		using Solver = Spectra::SymEigsSolver<ManualOp>;
-		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3, pg, usage_start, usage_end);
+		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3, pg);
 	}
 	else if (algo == "arnoldi") // IRAM
 	{
 		using Solver = Spectra::GenEigsSolver<ManualOp>;
-		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3, pg, usage_start, usage_end);
+		r = run_eigen_solver<Solver, ManualOp>(A, arg1, arg2, arg3, pg);
 	}
 	else
 	{
@@ -242,15 +237,9 @@ int main(int argc, char **argv)
 		hw_vals.push_back(pg.get_value(e.fd));
 	}
 
-	long voluntary_switches = usage_end.ru_nvcsw - usage_start.ru_nvcsw;
-	long involuntary_switches = usage_end.ru_nivcsw - usage_start.ru_nivcsw;
-	long minor_faults = usage_end.ru_minflt - usage_start.ru_minflt;
-	long major_faults = usage_end.ru_majflt - usage_start.ru_majflt;
-	long peak_rss = usage_end.ru_maxrss;
-
 	std::string result_line = matrix_basename + "," +
 							  std::to_string(num_cores) + "," +
-							  numa_policy + "," +
+							  process_numa_policy + "," +
 							  algo + "," +
 							  std::to_string(arg1) + "," +
 							  std::to_string(arg2) + "," +
@@ -262,13 +251,7 @@ int main(int argc, char **argv)
 							  std::to_string(hw_vals[0]) + "," +
 							  std::to_string(hw_vals[1]) + "," +
 							  std::to_string(hw_vals[2]) + "," +
-							  std::to_string(hw_vals[3]) + "," +
-							  std::to_string(voluntary_switches) + "," +
-							  std::to_string(involuntary_switches) + "," +
-							  std::to_string(minor_faults) + "," +
-							  std::to_string(major_faults) + "," +
-							  std::to_string(peak_rss) + "\n";
-
+							  std::to_string(hw_vals[3])+ "\n";
 	if (use_cout)
 	{
 		std::cout << result_line;

@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
     double bin_total = 0;
     for (int i = 0; i < iterations; ++i) {
         bin_total += timer([&]() {
-            CustomSparseMatrix mat = load_binary_matrix(bin_path, false);
+            CustomSparseMatrix mat = load_binary_matrix(bin_path);
         });
     }
 
