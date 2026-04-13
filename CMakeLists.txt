@@ -11,6 +11,17 @@ set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
 set(GCC_LIB_DIR "/projects/sw/eb/arch/zen4/software/GCCcore/14.2.0/lib/gcc/x86_64-pc-linux-gnu/14.2.0")
 set(STD_LIB_DIR "/projects/sw/eb/arch/zen4/software/GCCcore/14.2.0/lib64")
 
+# --- Static System Library Linking Configuration ---
+# 1. --start-group/--end-group: Forces the linker to recursively scan enclosed 
+#    archives to resolve circular dependencies common in static linking.
+# 2. libstdc++.a / libgomp.a: Statically links the C++ Standard Library and 
+#    the OpenMP (GNU Offloading and Multi-Processing) runtime for portability.
+# 3. libgcc.a / libgcc_eh.a: Statically links GCC internal helpers and 
+#    Exception Handling routines.
+# 4. -Bstatic m -Bdynamic: Temporarily switches to static mode to pull in the 
+#    math library (libm), then reverts to dynamic for system-level libs.
+# 5. pthread / c / dl: Explicitly links POSIX threads, the C Standard Library, 
+#    and the dynamic linking interface.
 set(STATIC_LIBS
     "-Wl,--start-group"
     "${STD_LIB_DIR}/libstdc++.a" "${STD_LIB_DIR}/libgomp.a"
