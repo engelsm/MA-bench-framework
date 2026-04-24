@@ -20,6 +20,20 @@ def load_matrix_data(filename):
 
 def main():
     parser = argparse.ArgumentParser()
+    """Generate PNG visualizations of sparse matrix data from `.bin` files.
+
+    Parses command-line arguments from `sys.argv`:
+        - `-d/--indir`: input directory containing `.bin` matrix files
+        - `-o/--outdir`: output directory for generated `.png` images
+        - `-s/--size`: marker size for scatter plots (default: `1.0`)
+
+    For each input file, the function loads matrix metadata and coordinates,
+    renders either a scatter plot (small matrices) or 2D histogram (large matrices),
+    and saves the resulting image to the output directory.
+
+    Returns:
+        None
+    """
     parser.add_argument("-d", "--indir", required=True)
     parser.add_argument("-o", "--outdir", required=True)
     parser.add_argument("-s", "--size", type=float, default=1.0)
@@ -42,11 +56,7 @@ def main():
 
         if n_r <= 5000:
             ax.scatter(
-                idx, row_idx,
-                s=args.size,
-                c="black",
-                marker="s",
-                edgecolors="none"
+                idx, row_idx, s=args.size, c="black", marker="s", edgecolors="none"
             )
         else:
             ax.hist2d(idx, row_idx, bins=150, cmap="Greys")

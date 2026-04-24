@@ -1,13 +1,19 @@
+/**
+ * @brief Entry point for converting a Matrix Market file to a binary matrix file.
+ *
+ * Parses command-line arguments for input and output paths, initializes a
+ * sparse matrix container, and invokes the binary write routine.
+ *
+ * @param argv Command-line arguments:
+ *             - argv[1]: Path to input .mtx file
+ *             - argv[2]: Path to output binary file
+ * @return 0 on success, 1 if required arguments are missing.
+ */
+
 #include "util.hpp"
 #include <iostream>
 #include <string>
 #include <iomanip>
-
-/**
- * Matrix Preprocessing Tool
- * This tool converts Matrix Market (.mtx) files into a custom
- * binary CSR format and writes matrix metadata to a CSV file.
- */
 
 int main(int argc, char *argv[])
 {

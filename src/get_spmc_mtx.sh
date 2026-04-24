@@ -1,6 +1,24 @@
+# Fetches a matrix from the SuiteSparse collection (https://sparse.tamu.edu/), converts it to the project’s binary SPMC format, and stores both source and processed files.
+#
+# Purpose:
+# - Automate retrieval and preprocessing of a SuiteSparse matrix identified as `group/name`.
+# - Organize generated artifacts into matrix-market (`mtx`) and binary output directories.
+#
+# What it does:
+# - Parses the input argument into `GROUP` and `NAME`.
+# - Downloads `${NAME}.tar.gz` from SuiteSparse and extracts `${NAME}.mtx`.
+# - Creates output folders under `../matrices/$TYPE/mtx` and `../matrices/$TYPE/binary_spmc`.
+# - Moves the extracted `.mtx` file into the MTX directory.
+# - Runs `../build/preprocess_matrix` to produce a binary `.bin` file.
+# - Prints a completion message including the final binary file size.
+#
+# Outputs:
+# - Matrix Market file: `../matrices/$TYPE/mtx/${NAME}.mtx`
+# - Binary matrix file: `../matrices/$TYPE/binary_spmc/${NAME}.bin`
+# - Console status line with resulting `.bin` file size.
+
 #!/bin/bash
 
-# Downloads, preprocesses, and stores a matrix from the SuiteSparse collection (https://sparse.tamu.edu/).
 # Usage: ./get_matrix.sh group/name
 GROUP=${1%/*}
 NAME=${1#*/}

@@ -1,3 +1,8 @@
+# Generates synthetic sparse matrix binary files for predefined matrix sizes and randomness factors.
+# Purpose: Automate batch creation of benchmark input matrices in a target output directory.
+# What it does: Creates the output directory, iterates over fixed N values and randomness factors, builds output filenames, and calls `synthgen` with N, NNZ-per-row, randomness, and output path.
+# Outputs: `.bin` files named like `<randomness>_N<size>.bin` in `MATRIX_PATH`, then prints a completion message and directory listing.
+
 #!/bin/bash
 
 MATRIX_PATH=$1

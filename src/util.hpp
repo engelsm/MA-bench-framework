@@ -1,18 +1,14 @@
-#pragma once
-#include <Eigen/Sparse>
-#include <fstream>
-#include <iostream>
-#include <vector>
-#include <fast_matrix_market/app/Eigen.hpp>
-#include <numeric>
-#include <algorithm>
-#include <cmath>
-#include <filesystem>
-
 /**
- * CUSTOM BINARY CSR FORMAT
+ * @brief Utility module for benchmarking support.
+ * @details Provides helpers to:
+ * - convert Matrix Market (.mtx) files to a custom binary CSR format,
+ * - load binary CSR matrices,
+ * - run CSR SpMV kernels,
+ * - compute GFLOPS metrics.
  *
- * LAYOUT IN MEMORY
+ * CUSTOM BINARY CSR FORMAT :
+ *
+ * BINARY LAYOUT IN MEMORY
  * (With 4 Byte StorageIndex=int and 8 Byte Scalar=double)
  * Data is stored in three consecutive sections without any padding:
  * * [1] HEADER
@@ -24,7 +20,18 @@
  * - Col-ID     (4 Bytes * NNZ)
  * * [3] VALUES
  * - Numbers    (8 Bytes * NNZ)
+
  */
+#pragma once
+#include <Eigen/Sparse>
+#include <fstream>
+#include <iostream>
+#include <vector>
+#include <fast_matrix_market/app/Eigen.hpp>
+#include <numeric>
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
 
 // Data type for CustomSparseMatrix entries.
 using Scalar = double;

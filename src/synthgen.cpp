@@ -1,3 +1,15 @@
+/**
+ * @brief Generates a synthetic CSR matrix with banded structure and optional random column perturbations,
+ *        then writes it to a custom binary file.
+ *
+ * @param argv The array of command-line argument strings:
+ *             argv[1] = matrix dimension (N),
+ *             argv[2] = nonzeros per row,
+ *             argv[3] = randomization factor,
+ *             argv[4] = optional output file path.
+ *
+ * @return 0 on success; nonzero if the arguments are invalid or matrix generation fails validation.
+ */
 #include <iostream>
 #include <vector>
 #include <cstdlib>

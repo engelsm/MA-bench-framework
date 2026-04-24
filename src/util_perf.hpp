@@ -1,3 +1,13 @@
+/**
+ * @brief Utility for grouped Linux perf event measurement.
+ *
+ * This module defines `PerfGroup`, a small RAII-style helper that opens hardware/cache
+ * performance counters via `perf_event_open`, groups them under a single leader so they
+ * start/stop simultaneously, and exposes methods to initialize common events, control
+ * measurement windows, and read per-event counts.
+ *
+ * Syscall documentation: https://man7.org/linux/man-pages/man2/perf_event_open.2.html
+ */
 #pragma once
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
@@ -6,8 +16,6 @@
 #include <vector>
 #include <cstring>
 #include <string>
-
-// Documentation: https://man7.org/linux/man-pages/man2/perf_event_open.2.html
 
 class PerfGroup
 {

@@ -1,3 +1,28 @@
+/**
+ * @brief Runs an SpMV benchmark, collects timing and hardware counter metrics, and writes results to CSV or stdout.
+ *
+ * This entry point parses command-line arguments, loads a sparse matrix from a binary file,
+ * initializes vectors, executes CSR-based sparse matrix-vector multiplication for a configured
+ * number of iterations, and records:
+ * - Matrix I/O load time
+ * - Per-iteration execution times
+ * - Total SpMV time
+ * - Selected hardware performance counter values
+ *
+ * Output modes:
+ * - File mode: appends summary metrics to `results_csv` and per-iteration timings to `iter_csv`
+ * - Console mode (`--cout`): prints only the summary result line to standard output (debugging purpose)
+ *
+ * @param argv Command-line argument array.
+ * Expected arguments:
+ * - File mode:
+ *   `<matrix.bin> <iterations> <run_id> <cores> <process_numa_policy> <results_csv> <iter_csv>`
+ * - Console mode:
+ *   `<matrix.bin> <iterations> <run_id> <cores> <process_numa_policy> --cout`
+ *
+ * @return 0 on success, 1 when arguments are invalid.
+ */
+
 #include <omp.h>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -10,12 +35,10 @@
 #include <cstdint>
 #include "util.hpp"
 #include "util_perf.hpp"
-
 int main(int argc, char **argv)
 {
 	std::vector<std::string> args(argv, argv + argc);
 
-	// The --cout flag is used for debugging purposes.
 	auto it = std::find(args.begin(), args.end(), "--cout");
 	bool use_cout = (it != args.end());
 
@@ -78,7 +101,8 @@ int main(int argc, char **argv)
 	pg.stop();
 
 	double total_spmv_time = 0;
-	for (const auto &res : iter_times){
+	for (const auto &res : iter_times)
+	{
 		total_spmv_time += res;
 	}
 

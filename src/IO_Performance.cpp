@@ -1,3 +1,11 @@
+/**
+ * @brief Benchmarks matrix load performance from Matrix Market (.mtx) versus binary (.bin) format.
+ *
+ * This program takes an input `.mtx` file and iteration count, converts the matrix once to `.bin`,
+ * then repeatedly measures and reports load times for both formats, including per-iteration timings,
+ * average times, and overall speedup of binary loading over MTX parsing.
+ */
+
 #include "util.hpp"
 #include <chrono>
 #include <iostream>
@@ -29,14 +37,13 @@ int main(int argc, char *argv[])
     std::cout << "Benchmarking Matrix: " << mtx_path << "\n"
               << std::endl;
 
-    // 1. Preparation
     CustomSparseMatrix conversion_mat;
     write_binary_matrix(mtx_path, bin_path, conversion_mat);
 
     std::vector<double> mtx_times(iterations);
     std::vector<double> bin_times(iterations);
 
-    // 2. Measure MTX
+    // Measure MTX
     for (int i = 0; i < iterations; ++i)
     {
         mtx_times[i] = timer([&]()
@@ -47,7 +54,7 @@ int main(int argc, char *argv[])
             mat.makeCompressed(); });
     }
 
-    // 3. Measure BIN
+    // Measure BIN
     for (int i = 0; i < iterations; ++i)
     {
         bin_times[i] = timer([&]()
@@ -71,7 +78,6 @@ int main(int argc, char *argv[])
         bin_total += bin_times[i];
     }
 
-    // --- Statistics ---
     std::cout << "\n================ SUMMARY ================" << std::endl;
     std::cout << "Average MTX: " << (mtx_total / iterations) << " s" << std::endl;
     std::cout << "Average BIN: " << (bin_total / iterations) << " s" << std::endl;
