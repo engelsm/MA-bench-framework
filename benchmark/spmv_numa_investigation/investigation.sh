@@ -1,3 +1,25 @@
+# Benchmark driver for investigating compiler linking NUMA effects on SPMV performance by pinning threads and memory to specific NUMA nodes, running multiple binaries repeatedly, and recording timing plus NUMA diagnostics.
+
+# Purpose:
+# - Execute repeated SPMV benchmark runs across selected NUMA nodes.
+# - Compare multiple SPMV binaries under fixed OpenMP placement settings.
+# - Collect runtime results into a CSV and NUMA allocation diagnostics into a log.
+#
+# What it does:
+# - Loads numactl module and reads environment name from first CLI argument.
+# - Defines base paths, input matrices, binaries, run count, and iteration count.
+# - Configures OpenMP thread affinity (OMP_PROC_BIND=close, OMP_PLACES=cores).
+# - Maps each NUMA node to a fixed CPU core range.
+# - For each node/binary/matrix/run combination:
+#   - Launches the benchmark with numactl CPU pinning and memory binding.
+#   - Captures per-run NUMA mapping and numastat process stats into a debug log.
+#   - Extracts timing output (7th CSV field) into a consolidated results CSV.
+#   - Cleans temporary per-run output files.
+#
+# Outputs:
+# - <ENV>.csv: "Binary,Node,Run,Time" benchmark timing table.
+# - <ENV>_numa_details.log: per-run NUMA placement and allocation diagnostics.
+
 #!/bin/bash
 
 ml tools/numactl/2.0.19-GCCcore-14.2.0

@@ -6,7 +6,7 @@ ml tools/numactl/2.0.19-GCCcore-14.2.0
 
 ENV=$1
 BASE_DIR="$HOME/MA-bench-framework"
-OUTDIR="$BASE_DIR/outputs/krylov/$ENV"
+OUTDIR="$BASE_DIR/outputs/krylov/test/$ENV"
 mkdir -p "$OUTDIR"
 
 RESULTS_CSV="$OUTDIR/results.csv"
