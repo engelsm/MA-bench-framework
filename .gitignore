@@ -7,7 +7,7 @@ cmake_install.cmake
 compile_commands.json
 
 matrices/
-outputs/
+outputs/spmv/*/extra
 legacy/
 images/
 
