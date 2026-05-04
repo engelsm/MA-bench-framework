@@ -5,12 +5,13 @@ CMakeFiles/
 Makefile
 cmake_install.cmake
 compile_commands.json
-*.o
 
 matrices/
 outputs/
-script_builder/workloads/matrices/
-script_builder/outputs/
+legacy/
+images/
+
+*.pdf
 
 slurm-*.out
 
