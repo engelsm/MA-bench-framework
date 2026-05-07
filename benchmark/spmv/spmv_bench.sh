@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# Start via: ssh ramses2004 "cd ~/MA-bench-framework/benchmark/spmv && nohup bash spmv_bench.sh sev > benchmark.log 2>&1"
-
 ml tools/numactl/2.0.19-GCCcore-14.2.0
 
 ENV=$1
