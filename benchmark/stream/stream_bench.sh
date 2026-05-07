@@ -16,7 +16,7 @@ for N in "${THREADS_LIST[@]}"; do
     
    export OMP_NUM_THREADS=$N
     
-   OUT=$(setarch $(uname -m) -R numactl -C 0-47 --membind=0,1 /home/mengelsl/MA-bench-framework/build/stream)
+   OUT=$(setarch $(uname -m) -R numactl -C 0-$((N - 1)) --membind=0,1 /home/mengelsl/MA-bench-framework/build/stream)
 
     echo "$OUT" | awk -F'[[:space:]]+' -v threads="$N" -v env="$ENV" '
         /Copy:|Scale:|Add:|Triad:/ {

@@ -2,7 +2,7 @@
 
 This repository contains a benchmark framework for evaluating the performance impact of a subclass of HPC workloads, with a focus on sparse linear algebra.
 
-The benchmarks were used for analyzing hardware-based memory encryption mechanisms, specifically AMD SME and SEV, and their impact on HPC performance.
+The benchmarks were used for analyzing hardware-based memory encryption mechanisms, specifically AMD SME and SEV, and their impact on HPC performance, especially in virtualized environments.
 
 The repository includes:
 - benchmark source code
@@ -59,3 +59,124 @@ outputs/
 
 src/
     Source code for benchmarks and utilities
+```
+
+## Using the Benchmarks
+
+### Prerequisites
+
+Apply the patch to Eigen for profiling.
+
+```bash
+git -C external/eigen apply ../../eigen_bench.patch
+```
+
+Build the project.
+
+```bash
+cmake --build build -j
+```
+
+### Stream
+
+Modify the thread parameter as desired in `stream_bench.sh`, then run:
+
+```bash
+bash benchmark/stream/stream_bench.sh
+```
+
+### SpMV
+
+#### 1. Generate matrices
+
+```bash
+bash src/gen_synth_mtx.sh matrices/spmv
+```
+
+To generate matrices with different parameters, edit `gen_synth_mtx.sh`.
+
+
+#### 2a. Run with the existing bench plan
+
+Set the desired number of runs per config in `spmv_bench.sh`, then:
+
+```bash
+cd benchmark/spmv
+bash spmv_bench.sh <output_file_name>
+```
+
+#### 2b. Create a custom bench plan
+
+1. Set desired values in `itertest_spmv.sh`: core counts, iteration guesses per matrix. `N_VALUES` and `BASE_ITERS` must match the dimensions of the generated matrices.
+2. Extrapolate the iteration test results:
+   ```bash
+   python3 create_bench_plan_spmv.py   # produces bench_plan.csv
+   ```
+3. Run as above:
+   ```bash
+   bash spmv_bench.sh <output_file_name>
+   ```
+
+### Krylov
+
+#### 1. Download matrices
+
+Get matrices from the [SuiteSparse Matrix Collection](https://sparse.tamu.edu/):
+
+```bash
+bash src/get_spmc_mtx.sh <matrix/group>
+```
+
+This downloads the `.mtx` file and converts it to `.bin`. Move the `.bin` manually to:
+
+```
+matrices/binary_spmc/symmetric/    # for symmetric matrices
+matrices/binary_spmc/unsymmetric/  # for unsymmetric matrices
+```
+
+The matrices used in the analysis are:
+
+| Symmetric | Unsymmetric |
+|---|---|
+| GHS_indef/dawson5 | Shen/e40r0100 |
+| AMD/G3_circuit | Martin/marine1 |
+| ND/nd_12k | Freescale/Freescale1 |
+| Janna/Hook_1498 | Fluorem/RM07R |
+| Janna/Bump_2911 | VLSI/vas_stokes_4M |
+
+#### 2a. Run with the existing bench plan
+
+Set the desired number of runs per config in `krylov_bench.sh`, then:
+
+```bash
+cd benchmark/krylov
+bash krylov_bench.sh <output_file_name>
+```
+
+#### 2b. Create a custom bench plan
+
+1. Set desired values in `itertest_spmv.sh`. Key parameters:
+   ```bash
+   CORES=(1 8 24 48)
+   N_EIGVALS=2            # 2 parameters for eigensolver
+   N_BVECS=10
+   FIXED_OPS_LINEAR=60    # used for estimation during runs
+   FIXED_RESTARTS_EIGEN=5 # used for estimation during runs
+   ```
+2. Extrapolate the iteration test results:
+   ```bash
+   python3 create_bench_plan_krylov.py   # produces bench_plan.csv
+   ```
+3. Run as above:
+   ```bash
+   bash krylov_bench.sh <output_file_name>
+   ```
+
+
+### Running on a VM
+
+Connect via SSH and launch the benchmark in the background:
+
+```bash
+ssh <VM> "cd ~/MA-bench-framework/benchmark/<benchmark> && nohup bash <benchmark>_bench.sh <output_file_name> > benchmark.log 2>&1"
+```

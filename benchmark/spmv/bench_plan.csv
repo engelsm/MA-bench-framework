@@ -1,4 +1,4 @@
-Matrix,Cores,NUMA_policy,Iter
+Matrix,Cores,NUMA_Policy,Iter_Target
 0-0_N1440352.bin,1,membind,369
 0-0_N1440352.bin,1,interleave,369
 0-0_N1440352.bin,8,membind,713

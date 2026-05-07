@@ -14,7 +14,7 @@
 #include "util_perf.hpp"
 
 // Apply patch for this file to work:
-// git -C external/eigen apply ../../eigen_bench_instrumentation.patch
+// git -C external/eigen apply ../../eigen_bench.patch
 
 struct Results
 {
@@ -251,7 +251,7 @@ int main(int argc, char **argv)
 							  std::to_string(hw_vals[0]) + "," +
 							  std::to_string(hw_vals[1]) + "," +
 							  std::to_string(hw_vals[2]) + "," +
-							  std::to_string(hw_vals[3])+ "\n";
+							  std::to_string(hw_vals[3]) + "\n";
 	if (use_cout)
 	{
 		std::cout << result_line;

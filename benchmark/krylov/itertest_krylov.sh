@@ -11,10 +11,11 @@ export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 CORES=(1 8 24 48)
-FIXED_OPS_LINEAR=60   
-FIXED_RESTARTS_EIGEN=5 
 N_EIGVALS=2 
 N_BVECS=10
+
+FIXED_OPS_LINEAR=60   
+FIXED_RESTARTS_EIGEN=5 
 
 echo "Matrix,Type,Cores,NUMA_Policy,Algo,Arg1,Arg2,Arg3,SpMV_Time,Mgmt_Time,N_OPS" > "$OUT"
 
